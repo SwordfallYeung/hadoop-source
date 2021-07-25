@@ -194,6 +194,8 @@ public abstract class AbstractService implements Service {
    * @throws ServiceStateException if the current service state does not permit
    * this action
    */
+  // todo 重写自Service类，会调用serviceStart方法
+  //   当前服务状态不允许start时，会抛出ServiceStateException
   @Override
   public void start() {
     if (isInState(STATE.STARTED)) {
@@ -204,6 +206,7 @@ public abstract class AbstractService implements Service {
       if (stateModel.enterState(STATE.STARTED) != STATE.STARTED) {
         try {
           startTime = System.currentTimeMillis();
+          // todo 启动服务
           serviceStart();
           if (isInState(STATE.STARTED)) {
             //if the service started (and isn't now in a later state), notify

@@ -398,6 +398,10 @@ public class NodeManager extends CompositeService
     pluginManager.initialize(context);
     ((NMContext)context).setResourcePluginManager(pluginManager);
 
+    // todo 初始化ContainerExecutor，ContainerExecutor封装了nodeManager对Container操作的各种方法，
+    // todo 包括启动container，查询指定id的container是否活着等操作，根据配置yarn.nodemanager.container-executor.class
+    // todo ContainerExecutor的实例，默认为DefaultContainerExecutor
+
     ContainerExecutor exec = createContainerExecutor(conf);
     try {
       exec.init(context);
@@ -408,14 +412,19 @@ public class NodeManager extends CompositeService
     addService(del);
 
     // NodeManager level dispatcher
+    // todo NodeManager level dispatcher 异步分发器
     this.dispatcher = createNMDispatcher();
 
+    // todo 可以通过此服务查询node是否健康，当前node的健康状态包括nodeHealthScriptRunner.isHealthy
+    //  和dirsHandler.areDisksHealthy
     this.nodeHealthChecker = new NodeHealthCheckerService(dirsHandler);
     addService(nodeHealthChecker);
 
     ((NMContext)context).setContainerExecutor(exec);
     ((NMContext)context).setDeletionService(del);
 
+    // todo 创建NodeStatusUpdater线程，负责向RM注册和发送心跳（更新状态）
+    //   这里使用ResourceTracker协议向RM通信，底层为YarnRPC.ResourceTracker接口提供了两个方法：提供注册和心跳功能
     nodeStatusUpdater =
         createNodeStatusUpdater(context, dispatcher, nodeHealthChecker);
 
@@ -431,10 +440,13 @@ public class NodeManager extends CompositeService
       nodeStatusUpdater.setNodeAttributesProvider(nodeAttributesProvider);
     }
 
+    // todo 监控node的资源（即资源是否可用，四种状态：stopped，inited，notinited，started）
     nodeResourceMonitor = createNodeResourceMonitor();
     addService(nodeResourceMonitor);
     ((NMContext) context).setNodeResourceMonitor(nodeResourceMonitor);
 
+    // todo 创建ContainerManagerImpl服务，管理container，使用ContainerManager协议，
+    //    ContainerManager协议为APP向NodeManager通信的协议
     containerManager =
         createContainerManager(context, exec, del, nodeStatusUpdater,
         this.aclsManager, dirsHandler);
@@ -447,6 +459,8 @@ public class NodeManager extends CompositeService
     ((NMContext)context).setNMLogAggregationStatusTracker(
         this.nmLogAggregationStatusTracker);
 
+    // todo 创建WebServer，启动NodeManager的web服务
+    //  通过yarn.nodemanagerwebapp.address设置地址，默认端口为8042
     WebServer webServer = createWebServer(context, containerManager
         .getContainersMonitor(), this.aclsManager, dirsHandler);
     addService(webServer);
@@ -468,6 +482,7 @@ public class NodeManager extends CompositeService
     addService(pauseMonitor);
     metrics.getJvmMetrics().setPauseMonitor(pauseMonitor);
 
+    // todo 初始化监控
     DefaultMetricsSystem.initialize("NodeManager");
 
     if (YarnConfiguration.timelineServiceV2Enabled(conf)) {
@@ -959,7 +974,9 @@ public class NodeManager extends CompositeService
       // System exit should be called only when NodeManager is instantiated from
       // main() funtion
       this.shouldExitOnShutdownEvent = true;
+      // todo 调用init()函数，进行初始化（init方法调用被重写的serviceInit方法进行初始化）
       this.init(conf);
+      // todo 启动各项服务（start方法内部调用被重写的serviceStart方法进行启动各项服务）
       this.start();
     } catch (Throwable t) {
       LOG.error("Error starting NodeManager", t);
@@ -1032,11 +1049,15 @@ public class NodeManager extends CompositeService
     return this.nmCollectorService;
   }
 
+  // todo 启动入口
   public static void main(String[] args) throws IOException {
     Thread.setDefaultUncaughtExceptionHandler(new YarnUncaughtExceptionHandler());
+    // todo 打印NodeManager启动和关闭时的日志信息
     StringUtils.startupShutdownMessage(NodeManager.class, args, LOG);
+    // todo 创建NodeManager对象
     @SuppressWarnings("resource")
     NodeManager nodeManager = new NodeManager();
+    // todo 加载配置文件初始化
     Configuration conf = new YarnConfiguration();
     new GenericOptionsParser(conf, args);
     nodeManager.initAndStartNodeManager(conf, false);
