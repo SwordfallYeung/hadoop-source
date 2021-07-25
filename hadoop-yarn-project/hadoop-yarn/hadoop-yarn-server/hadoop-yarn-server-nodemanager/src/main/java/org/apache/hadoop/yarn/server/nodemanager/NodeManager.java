@@ -352,8 +352,11 @@ public class NodeManager extends CompositeService
     return new ResourcePluginManager();
   }
 
+  // todo 在yarn里面Container是可选的：1.DefaultContainerExecutor，2.LinuxContainerExecutor
+  //  由配置参数控制：yarn.nodemanager.container-executor.class
   @VisibleForTesting
   protected ContainerExecutor createContainerExecutor(Configuration conf) {
+    // todo 创建ContainerExecutor，默认是DefaultContainerExecutor
     return ReflectionUtils.newInstance(
         conf.getClass(YarnConfiguration.NM_CONTAINER_EXECUTOR,
             DefaultContainerExecutor.class, ContainerExecutor.class), conf);

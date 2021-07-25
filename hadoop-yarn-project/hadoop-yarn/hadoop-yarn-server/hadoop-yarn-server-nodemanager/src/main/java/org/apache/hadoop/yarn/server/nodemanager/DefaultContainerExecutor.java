@@ -72,6 +72,51 @@ import org.slf4j.LoggerFactory;
  * execution services. Process execution is handled in a platform-independent
  * way via {@link ProcessBuilder}.
  */
+// todo 简称DCE。每个Container运行在单独的进程里，但进程都是由NM的用户启动的。
+//  比如NM进程是用yarn用户启动的，那么所有Container的进程也由yarn用户启动。
+//
+// todo 在ContainerExecutor启动一个Container的过程中，涉及到了三个脚本，它们分别是：
+//    1.default_container_executor.sh
+//    2.default_container_executor_session.sh
+//    3.launch_container.sh
+//    这三个脚本，都是跟Container相关的，所以它们都被放在一个Container所代表的目录结构下。
+//    在NodeManager中，会为了每个Application，以及每个Container建立一个对应的目录，
+//    在每个Container的目录下，就放置了一些运行这个Container所必须的信息。
+//    一般来说，这些目录是位于/tmp这个目录下，并且会在一个Application完成后，被删除，减少磁盘空间的消耗。
+
+/**
+ * tree /tmp/hadoop-cluster:
+ *    /tmpe/hadoop-cluster
+ *    |———— dfs
+ *    |     |—— namesecondary
+ *    |         |———— in_user.lock
+ *    |———— nm-local-dir
+ *          |—— filecache
+ *          |—— nmPrivate
+ *          |—— usercache
+ *              |—— hadoop-cluster
+ *                  |—— appcache
+ *                  |   |—— application_1520752729961_0001
+ *                  |       |—— container_1520752729961_0001_01_000001
+ *                  |       |   |—— container_tokens
+ *                  |       |   |—— default_container_executor_session.sh
+ *                  |       |   |—— default_container_executor.sh
+ *                  |       |   |—— job.jar -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/11/job.jar
+ *                  |       |   |—— jobSubmitDir
+ *                  |       |   |   |—— job.split -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/12/job.split
+ *                  |       |   |   |—— job.splitmetainfo -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/10/job.splitmetainfo
+ *                  |       |   |—— job.xml -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/13/job.xml
+ *                  |       |   |—— launch_container.sh
+ *                  |       |   |—— tmp
+ *                  |       |—— container_1520752729961_0001_01_000002
+ *                  |       |   |—— container_tokens
+ *                  |       |   |—— default_container_executor_session.sh
+ *                  |       |   |—— default_container_executor.sh
+ *                  |       |   |—— job.jar -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/11/job.jar
+ *                  |       |   |—— job.xml -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/13/job.xml
+ *                  |       |   |—— launch_container.sh
+ *                  |       |   |—— tmp
+ */
 public class DefaultContainerExecutor extends ContainerExecutor {
 
   private static final Logger LOG =

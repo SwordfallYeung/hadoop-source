@@ -76,6 +76,7 @@ import static org.apache.hadoop.yarn.server.nodemanager.containermanager.launche
  * This class is abstraction of the mechanism used to launch a container on the
  * underlying OS.  All executor implementations must extend ContainerExecutor.
  */
+// todo 所有的ContainerExecutor都会继承这个类
 public abstract class ContainerExecutor implements Configurable {
   private static final Logger LOG =
        LoggerFactory.getLogger(ContainerExecutor.class);
@@ -103,6 +104,7 @@ public abstract class ContainerExecutor implements Configurable {
   private int exitCodeFileTimeout =
       YarnConfiguration.DEFAULT_NM_CONTAINER_EXECUTOR_EXIT_FILE_TIMEOUT;
 
+  // todo 设置配置文件
   @Override
   public void setConf(Configuration conf) {
     this.conf = conf;
@@ -127,6 +129,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @param nmContext Context of NM
    * @throws IOException if initialization fails
    */
+  // todo 初始化
   public abstract void init(Context nmContext) throws IOException;
 
   public void start() {}
@@ -171,6 +174,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @throws IOException for most application init failures
    * @throws InterruptedException if application init thread is halted by NM
    */
+  // todo 为此应用程序中的容器准备执行环境
   public abstract void startLocalizer(LocalizerStartContext ctx)
     throws IOException, InterruptedException;
 
@@ -179,6 +183,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @param ctx Encapsulates information necessary for launching containers.
    * @throws IOException if errors occur during container preparation
    */
+  // todo 在编写启动环境之前准备容器
   public void prepareContainer(ContainerPrepareContext ctx) throws
       IOException{
   }
@@ -191,6 +196,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @throws IOException if the container launch fails
    * @throws ConfigurationException if config error was found
    */
+  // todo 在节点上启动容器。这是一个阻塞调用，仅在容器退出时返回
   public abstract int launchContainer(ContainerStartContext ctx) throws
       IOException, ConfigurationException;
 
@@ -202,6 +208,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @throws IOException if the container relaunch fails
    * @throws ConfigurationException if config error was found
    */
+  // todo 重新启动节点上的容器。这是一个阻塞调用，仅在容器退出时返回
   public abstract int relaunchContainer(ContainerStartContext ctx) throws
       IOException, ConfigurationException;
 
@@ -212,6 +219,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @return returns true if the operation succeeded
    * @throws IOException if signaling the container fails
    */
+  // todo 具有指定信号的信号容器
   public abstract boolean signalContainer(ContainerSignalContext ctx)
       throws IOException;
 
@@ -262,6 +270,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @throws IOException if there is a failure while checking the container
    * status
    */
+  // todo 检查容器是否存活
   public abstract boolean isContainerAlive(ContainerLivenessContext ctx)
       throws IOException;
 
@@ -294,6 +303,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @throws InterruptedException if interrupted while waiting to reacquire
    * the container
    */
+  // 恢复已存在的容器。这是一个阻塞调用，仅在容器退出时返回。请注意，在此调用之前必须已激活容器。
   public int reacquireContainer(ContainerReacquisitionContext ctx)
       throws IOException, InterruptedException {
     Container container = ctx.getContainer();
@@ -374,6 +384,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @throws IOException if any errors happened writing to the OutputStream,
    * while creating symlinks
    */
+  // 写入启动环境 默认容器启动脚本
   public void writeLaunchEnv(OutputStream out, Map<String, String> environment,
       Map<Path, List<String>> resources, List<String> command, Path logDir,
       String user, LinkedHashSet<String> nmVars) throws IOException {
@@ -485,6 +496,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @param dir the target directory
    * @return a list of files in the target directory
    */
+  // 读取用户目录
   protected File[] readDirAsUser(String user, Path dir) {
     return new File(dir.toString()).listFiles();
   }
@@ -587,6 +599,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @param config the configuration
    * @return the command line to execute
    */
+  // todo 获取运行命令
   protected String[] getRunCommand(String command, String groupId,
       String userName, Path pidFile, Configuration config) {
     return getRunCommand(command, groupId, userName, pidFile, config, null);
@@ -716,6 +729,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @param containerId the target container's ID
    * @return true if the container is active
    */
+  // todo 容器是否存活
   protected boolean isContainerActive(ContainerId containerId) {
     return this.pidFiles.containsKey(containerId);
   }
@@ -732,6 +746,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @param pidFilePath the path where the executor should write the PID
    * of the launched process
    */
+  // todo 标记容器为活跃状态
   public void activateContainer(ContainerId containerId, Path pidFilePath) {
     this.pidFiles.put(containerId, pidFilePath);
   }
@@ -773,6 +788,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @param container
    *          the Container
    */
+  // todo 暂停容器，默认实现是kill，可以自定义
   public void pauseContainer(Container container) {
     LOG.warn("{} doesn't support pausing.", container.getContainerId());
     throw new UnsupportedOperationException();
@@ -818,6 +834,7 @@ public abstract class ContainerExecutor implements Configurable {
    * @return the process ID of the container if it has already launched,
    * or null otherwise
    */
+  // todo 根据容器ID获取进程ID
   public String getProcessId(ContainerId containerID) {
     String pid = null;
     Path pidFile = pidFiles.get(containerID);
@@ -838,6 +855,7 @@ public abstract class ContainerExecutor implements Configurable {
    * This class will signal a target container after a specified delay.
    * @see #signalContainer
    */
+  // todo 根据信号，杀死进程的类（这个是杀死进程的类）
   public static class DelayedProcessKiller extends Thread {
     private final Container container;
     private final String user;
