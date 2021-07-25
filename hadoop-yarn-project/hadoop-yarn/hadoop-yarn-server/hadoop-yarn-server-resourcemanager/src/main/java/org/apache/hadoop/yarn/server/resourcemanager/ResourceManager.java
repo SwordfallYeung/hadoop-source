@@ -1512,6 +1512,7 @@ public class ResourceManager extends CompositeService
     LOG.info("Transitioned to standby state");
   }
 
+  // todo 在这里面核心的是：serviceStart方法，子类有自定义的方法，最终都会调用父类的方法。
   @Override
   protected void serviceStart() throws Exception {
     if (this.rmContext.isHAEnabled()) {

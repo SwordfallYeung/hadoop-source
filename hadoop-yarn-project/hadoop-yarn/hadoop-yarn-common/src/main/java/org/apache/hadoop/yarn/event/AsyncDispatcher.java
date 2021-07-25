@@ -89,7 +89,7 @@ public class AsyncDispatcher extends AbstractService implements Dispatcher {
   // queue while stopping.
   // todo 在AsyncDispatcher停止过程中阻塞新近到来的事件进入队列的标志位，近当drainEventsOnStop启用（即为true）时有效
   private volatile boolean blockNewEvents = false;
-  // todo 事件处理器实例
+  // todo 事件处理器实例  消费者GenericEventHandler，就是向队列中添加事件而已。
   private final EventHandler<Event> handlerInstance = new GenericEventHandler();
 
   private Thread eventHandlingThread;
@@ -128,24 +128,33 @@ public class AsyncDispatcher extends AbstractService implements Dispatcher {
     dispatcherThreadName = dispatcherName;
   }
 
+  // todo 消费队列中的数据
   Runnable createThread() {
     return new Runnable() {
       @Override
       public void run() {
+        // todo 如果不是停止，或者当前线程不被中断
         while (!stopped && !Thread.currentThread().isInterrupted()) {
+          //todo 判断事件调度队列eventQueue是否为空，并赋值给标志位drained
           drained = eventQueue.isEmpty();
           // blockNewEvents is only set when dispatcher is draining to stop,
           // adding this check is to avoid the overhead of acquiring the lock
           // and calling notify every time in the normal run of the loop.
+          // todo 如果停止过程中阻止新的事件加入待处理队列，即标志位blockNewEvents为true
           if (blockNewEvents) {
+            // todo 在这里面有锁
             synchronized (waitForDrained) {
               if (drained) {
+                // todo 如果待处理队列中的事件都已调度完毕，调用waitForDrained的notify()方法通知等待者
                 waitForDrained.notify();
               }
             }
           }
           Event event;
           try {
+            // todo 获取事件
+            // todo 从事件调度队列eventQueue中取出一个事件
+            // todo take()方法为取走BlockingQueue里排在首位的对象，若BlockingQueue为空，阻塞进入等待状态直到BlockingQueue有新的数据被加入
             event = eventQueue.take();
           } catch(InterruptedException ie) {
             if (!stopped) {
@@ -153,10 +162,12 @@ public class AsyncDispatcher extends AbstractService implements Dispatcher {
             }
             return;
           }
+          // todo 如果取出待处理的事件event，即不为null
           if (event != null) {
             if (eventTypeMetricsMap.
                 get(event.getType().getDeclaringClass()) != null) {
               long startTime = clock.getTime();
+              // todo 调度事件event调用dispatch()方法进行分发
               dispatch(event);
               eventTypeMetricsMap.get(event.getType().getDeclaringClass())
                   .increment(event.getType(),
@@ -194,8 +205,12 @@ public class AsyncDispatcher extends AbstractService implements Dispatcher {
   protected void serviceStart() throws Exception {
     //start all the components
     super.serviceStart();
+    // todo 创建事件处理调度线程 eventHandlingThread
+    // todo createThread !!!!!!!!
     eventHandlingThread = new Thread(createThread());
+    // todo 设置线程名为AsyncDispatcher event handler
     eventHandlingThread.setName(dispatcherThreadName);
+    // todo 启动事件处理调度线程eventHandlingThread
     eventHandlingThread.start();
   }
 
@@ -236,19 +251,24 @@ public class AsyncDispatcher extends AbstractService implements Dispatcher {
     super.serviceStop();
   }
 
+  // todo 这个是事件调度方法 dispatch
   @SuppressWarnings("unchecked")
   protected void dispatch(Event event) {
     //all events go thru this loop
     LOG.debug("Dispatching the event {}.{}", event.getClass().getName(),
         event);
 
+    // todo 根据事件event获取事件类型枚举类type
     Class<? extends Enum> type = event.getType().getDeclaringClass();
 
     try{
+      // todo 获取事件类型所对应的Handler
       EventHandler handler = eventDispatchers.get(type);
       if(handler != null) {
+        // todo 调用对应的handler来处理事件
         handler.handle(event);
       } else {
+        // todo 否则抛出异常，提示针对事件类型type的事件处理器handler没有注册
         throw new Exception("No handler for registered for " + type);
       }
     } catch (Throwable t) {
@@ -295,6 +315,7 @@ public class AsyncDispatcher extends AbstractService implements Dispatcher {
     return handlerInstance;
   }
 
+  // todo 默认的通用事件处理 --产生数据
   class GenericEventHandler implements EventHandler<Event> {
     private void printEventQueueDetails() {
       Iterator<Event> iterator = eventQueue.iterator();
@@ -313,13 +334,18 @@ public class AsyncDispatcher extends AbstractService implements Dispatcher {
       }
     }
     public void handle(Event event) {
+      // todo 如果blockNewEvents为true，即AsyncDispatcher服务停止过程正在发生，
+      // todo 阻止新的事件加入待调度处理事件队列eventQueue，直接返回
       if (blockNewEvents) {
         return;
       }
+      // todo 标志位drained设置为false，说明队列中尚有事件需要调度
       drained = false;
 
       /* all this method does is enqueue all the events onto the queue */
+      // todo 获取队列eventQueue大小pSize
       int qSize = eventQueue.size();
+      // todo 每隔1000记录一条info级别日志信息，比如 Size of event-queue is 2000
       if (qSize != 0 && qSize % 1000 == 0
           && lastEventQueueSizeLogged != qSize) {
         lastEventQueueSizeLogged = qSize;
@@ -331,12 +357,16 @@ public class AsyncDispatcher extends AbstractService implements Dispatcher {
         printEventQueueDetails();
         printTrigger = true;
       }
+      // todo 获取队列eventQueue剩余容量remCapacity
       int remCapacity = eventQueue.remainingCapacity();
+      // todo 如果剩余容量remCapacity小于1000，记录warn级别日志信息
+      // todo 比如：Very low remaining capacity in the event-queue: 888
       if (remCapacity < 1000) {
         LOG.warn("Very low remaining capacity in the event-queue: "
             + remCapacity);
       }
       try {
+        // todo 队列eventQueue中添加事件event
         eventQueue.put(event);
       } catch (InterruptedException e) {
         if (!stopped) {

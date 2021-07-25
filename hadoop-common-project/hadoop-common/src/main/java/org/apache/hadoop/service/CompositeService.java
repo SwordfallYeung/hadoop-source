@@ -112,6 +112,7 @@ public class CompositeService extends AbstractService {
   }
 
   protected void serviceStart() throws Exception {
+    // todo 获取所有的服务，其实就是一个ArrayList
     List<Service> services = getServices();
     if (LOG.isDebugEnabled()) {
       LOG.debug(getName() + ": starting services, size=" + services.size());
