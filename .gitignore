@@ -5,7 +5,7 @@ hadoop-assemblies
 hadoop-build-tools
 hadoop-client-modules
 hadoop-cloud-storage-project
-hadoop-common-project
+hadoop-common-project/hadoop-common-project.imlhad
 hadoop-dist
 hadoop-mapreduce-project
 hadoop-maven-plugins
