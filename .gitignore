@@ -14,7 +14,7 @@ hadoop-project
 hadoop-project-dist
 hadoop-tools
 hadoop-main.iml
-hadoop-hdfs-project
+hadoop-hdfs-project/hadoop-hdfs-project.iml
 hadoop-yarn-project/hadoop-yarn-project.iml
 hadoop-yarn-project/hadoop-yarn/dev-support
 hadoop-yarn-project/hadoop-yarn/hadoop-yarn.iml
