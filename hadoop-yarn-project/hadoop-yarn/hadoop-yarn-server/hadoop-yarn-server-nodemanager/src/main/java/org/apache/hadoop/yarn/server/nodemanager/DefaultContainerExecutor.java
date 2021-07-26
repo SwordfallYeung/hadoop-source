@@ -85,8 +85,8 @@ import org.slf4j.LoggerFactory;
 //    一般来说，这些目录是位于/tmp这个目录下，并且会在一个Application完成后，被删除，减少磁盘空间的消耗。
 
 /**
- * tree /tmp/hadoop-cluster:
- *    /tmpe/hadoop-cluster
+ * tree /tmp/data1:
+ *    /tmp/data1
  *    |———— dfs
  *    |     |—— namesecondary
  *    |         |———— in_user.lock
@@ -94,28 +94,94 @@ import org.slf4j.LoggerFactory;
  *          |—— filecache
  *          |—— nmPrivate
  *          |—— usercache
- *              |—— hadoop-cluster
+ *              |—— tenant1
  *                  |—— appcache
  *                  |   |—— application_1520752729961_0001
  *                  |       |—— container_1520752729961_0001_01_000001
  *                  |       |   |—— container_tokens
  *                  |       |   |—— default_container_executor_session.sh
  *                  |       |   |—— default_container_executor.sh
- *                  |       |   |—— job.jar -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/11/job.jar
- *                  |       |   |—— jobSubmitDir
- *                  |       |   |   |—— job.split -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/12/job.split
- *                  |       |   |   |—— job.splitmetainfo -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/10/job.splitmetainfo
- *                  |       |   |—— job.xml -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/13/job.xml
  *                  |       |   |—— launch_container.sh
+ *                  |       |   |—— job.jar -> /tmp/data1/nm-local-dir/usercache/tenant1/appcache/application_1520752729961_0001/filecache/11/job.jar
+ *                  |       |   |—— jobSubmitDir
+ *                  |       |   |   |—— job.split -> /tmp/data1/nm-local-dir/usercache/tenant1/appcache/application_1520752729961_0001/filecache/12/job.split
+ *                  |       |   |   |—— job.splitmetainfo -> /tmp/data1/nm-local-dir/usercache/tenant1/appcache/application_1520752729961_0001/filecache/10/job.splitmetainfo
+ *                  |       |   |—— job.xml -> /tmp/data1/nm-local-dir/usercache/tenant1/appcache/application_1520752729961_0001/filecache/13/job.xml
  *                  |       |   |—— tmp
  *                  |       |—— container_1520752729961_0001_01_000002
  *                  |       |   |—— container_tokens
  *                  |       |   |—— default_container_executor_session.sh
  *                  |       |   |—— default_container_executor.sh
- *                  |       |   |—— job.jar -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/11/job.jar
- *                  |       |   |—— job.xml -> /tmp/hadoop-cluster/nm-local-dir/usercache/hadoop-cluster/appcache/application_1520752729961_0001/filecache/13/job.xml
  *                  |       |   |—— launch_container.sh
+ *                  |       |   |—— job.jar -> /tmp/data1/nm-local-dir/usercache/tenant1/appcache/application_1520752729961_0001/filecache/11/job.jar
+ *                  |       |   |—— job.xml -> /tmp/data1/nm-local-dir/usercache/tenant1/appcache/application_1520752729961_0001/filecache/13/job.xml
  *                  |       |   |—— tmp
+ *
+ *  我们分别查看一下，上面所说的三个脚本文件的内容.
+ *  default-container_executor.sh:
+ *     | #!/bin/bash
+ *     | /bin/bash "/tmp/data1/nm-local-dir/usercache/tenant1/appcache/application_1520752729961_0001/container_1520752729961_0001_01_000001/default_container_executor_session.sh"
+ *     | rc=$?
+ *     | echo $rc > "/tmp/data1/nm-local-dir/nmPrivate/application_1520752729961_0001/container_1520752729961_0001_01_000001/container_1520752729961_0001_01_000001.pid.exitcode.tmp"
+ *     | /bin/mv -f "/tmp/data1/nm-local-dir/nmPrivate/application_1520752729961_0001/container_1520752729961_0001_01_000001/container_1520752729961_0001_01_000001.pid.exitcode.tmp" "/data3/nm-local-dir/nmPrivate/application_1520752729961_0001/container_1520752729961_0001_01_000001/container_1520752729961_0001_01_000001.pid.exitcode"
+ *     | exit $rc
+ *   可以看到，在这个脚本文件的内部，会启动 default_container_executor_session.sh 这个脚本，并将执行结果写入到这个Container的一个名为Container ID + pid.exitcode的文件中。
+ *   而 default_container_executor_session.sh 这个脚本呢？
+ *     | #!/bin/bash
+ *
+ *     | echo $$ > /tmp/data1/nm-local-dir/nmPrivate/application_1520752729961_0001/container_1520752729961_0001_01_000001/container_1520752729961_0001_01_000001.pid.tmp
+ *     | /bin/mv -f /tmp/data1/nm-local-dir/nmPrivate/application_1520752729961_0001/container_1520752729961_0001_01_000001/container_1520752729961_0001_01_000001.pid.tmp /data3/nm-local-dir/nmPrivate/application_1520752729961_0001/container_1520752729961_0001_01_000001/container_1520752729961_0001_01_000001.pid
+ *     | exec setsid /bin/bash "/tmp/data1/nm-local-dir/usercache/redpeak/appcache/application_1520752729961_0001/container_1520752729961_0001_01_000001/launch_container.sh"
+ *   可以看到，它主要是启动launch_container.sh这个脚本
+ *   在launch_container.sh中，就负责运行相应的Container，也能是MRAppMaster，也可能是Mapper或者Reducer。
+ *     | #!/bin/bash
+ *
+ *     | export SPARK_YARN_STAGING_DIR="hdfs://hdfs/user/tenant1/.sparkStaging/application_1624160373023_0001"
+ *     | export HADOOP_CONF_DIR="/home/hypergalaxy/hadoop/etc/hadoop"
+ *     | export JAVA_HOME="/usr/jdk64/jdk1.8.0_112"
+ *     | export SPARK_LOG_URL_STDOUT="http://node214:8042/node/containerlogs/container_1520752729961_0001_01_000001/redpeak/stdout?start=-4096"
+ *     | export NM_HOST="node214"
+ *     | export SPARK_HOME="/home/hypergalaxy/spark"
+ *     | export HADOOP_HDFS_HOME="/home/hypergalaxy/hadoop"
+ *     | export LOGNAME="redpeak"
+ *     | export JVM_PID="$$"
+ *     | export PWD="/tmp/data1/nm-local-dir/usercache/redpeak/appcache/application_1520752729961_0001/container_1520752729961_0001_01_000001"
+ *     | export HADOOP_COMMON_HOME="/home/hypergalaxy/hadoop"
+ *     | export LOCAL_DIRS="/tmp/data1/nm-local-dir/usercache/tenant1/appcache/application_1520752729961_0001"
+ *     | export NM_HTTP_PORT="8042"
+ *     | export LOG_DIRS="/tmp/data1/nm-logs-dir/application_1520752729961_0001/container_1520752729961_0001_01_000001"
+ *     | export NM_PORT="31887"
+ *     | export USER="tenant1"
+ *     | export HADOOP_YARN_HOME="/home/hypergalaxy/hadoop"
+ *     | export CLASSPATH="$PWD:$PWD/__spark_conf__:$PWD/__spark_libs__/*:$HADOOP_CONF_DIR:$HADOOP_COMMON_HOME/share/hadoop/common/*:$HADOOP_COMMON_HOME/share/hadoop/common/lib/*:$HADOOP_HDFS_HOME/share/hadoop/hdfs/*:$HADOOP_HDFS_HOME/share/hadoop/hdfs/lib/*:$HADOOP_YARN_HOME/share/hadoop/yarn/*:$HADOOP_YARN_HOME/share/hadoop/yarn/lib/*:$HADOOP_MAPRED_HOME/share/hadoop/mapreduce/*:$HADOOP_MAPRED_HOME/share/hadoop/mapreduce/lib/*"
+ *     | export SPARK_YARN_MODE="true"
+ *     | export HADOOP_TOKEN_FILE_LOCATION="/tmp/data1/nm-local-dir/usercache/tenant1/appcache/application_1520752729961_0001/container_1520752729961_0001_01_000001/container_tokens"
+ *     | export SPARK_USER="tenant1"
+ *     | export SPARK_LOG_URL_STDERR="http://node214:8042/node/containerlogs/container_e18_1624160373023_0001_01_000021/redpeak/stderr?start=-4096"
+ *     | export HOME="/home/"
+ *     | export CONTAINER_ID="container_1520752729961_0001_01_000001"
+ *     | export MALLOC_ARENA_MAX="4"
+ *     | ln -sf "/tmp/data1/nm-local-dir/usercache/tenant1/filecache/33/__spark_conf__.zip" "__spark_conf__"
+ *     | hadoop_shell_errorcode=$?
+ *     | if [ $hadoop_shell_errorcode -ne 0 ]
+ *     | then
+ *     |   exit $hadoop_shell_errorcode
+ *     | fi
+ *     | ln -sf "/tmp/data1/nm-local-dir/filecache/11/spark2-archive" "__spark_libs__"
+ *     | hadoop_shell_errorcode=$?
+ *     | if [ $hadoop_shell_errorcode -ne 0 ]
+ *     | then
+ *     |   exit $hadoop_shell_errorcode
+ *     | fi
+ *     | exec /bin/bash -c "$JAVA_HOME/bin/java -server -Xmx4096m '-Dlog4j.configuration=file:/home/hypergalaxy/spark/conf/log4j-thriftserver-executor.properties' -Djava.io.tmpdir=$PWD/tmp '-Dspark.master.port=7077' '-Dspark.history.ui.port=18081' '-Dspark.driver.port=28343' -Dspark.yarn.app.container.log.dir=/data3/nm-logs-dir/application_1520752729961_0001/container_e18_1624160373023_0001_01_000021 -XX:OnOutOfMemoryError='kill %p' org.apache.spark.executor.CoarseGrainedExecutorBackend --driver-url spark://CoarseGrainedScheduler@192.168.1.215:28343 --executor-id 20 --hostname node214 --cores 2 --app-id application_1624160373023_0001 --user-class-path file:$PWD/__app__.jar 1>/data3/nm-logs-dir/application_1624160373023_0001/container_e18_1624160373023_0001_01_000021/stdout 2>/data3/nm-logs-dir/application_1624160373023_0001/container_1520752729961_0001_01_000001/stderr"
+ *     | hadoop_shell_errorcode=$?
+ *     | if [ $hadoop_shell_errorcode -ne 0 ]
+ *     | then
+ *     |   exit $hadoop_shell_errorcode
+ *     | fi
+ *
+ *  在launch_container.sh中，设置了很多环境变量。
+ *  那么，DefaultContainerExecutor应该就是首先执行default_container_executor.sh这个脚本。
  */
 public class DefaultContainerExecutor extends ContainerExecutor {
 
@@ -185,29 +251,51 @@ public class DefaultContainerExecutor extends ContainerExecutor {
     // nothing to do or verify here
   }
 
+  /**
+   * todo 设置初始化操作，需要传入初始化对象
+   *    LocalizerStartContext：封装启动本地化程序所需的信息
+   * @param ctx LocalizerStartContext that encapsulates necessary information
+   *            for starting a localizer.
+   * @throws IOException
+   * @throws InterruptedException
+   */
   @Override
   public void startLocalizer(LocalizerStartContext ctx)
       throws IOException, InterruptedException {
     Path nmPrivateContainerTokensPath = ctx.getNmPrivateContainerTokens();
+    // todo 获取nodeManager 通讯地址
     InetSocketAddress nmAddr = ctx.getNmAddr();
     String user = ctx.getUser();
     String appId = ctx.getAppId();
     String locId = ctx.getLocId();
     LocalDirsHandlerService dirsHandler = ctx.getDirsHandler();
 
+    // todo 本地文件目录
     List<String> localDirs = dirsHandler.getLocalDirs();
+    // todo 本地日志文件目录
     List<String> logDirs = dirsHandler.getLogDirs();
-    
+
+    // todo 初始化特定用户的本地目录 localDirs
+    //  create $local.dir/usercache/$user and its immediate parent
     createUserLocalDirs(localDirs, user);
+    // todo 创建用户缓存目录
+    //  create $local.dir/usercache/$user/appcache
     createUserCacheDirs(localDirs, user);
+    // todo 创建App目录
+    //  create $local.dir/usercache/$user/appcache/$appId
     createAppDirs(localDirs, user, appId);
+    // todo 创建App 日志目录
+    //  create $log.dir/$appid
     createAppLogDirs(appId, logDirs, user);
 
+    // todo 创建工作目录
+    //  从本地存储目录列表中返回随机选择的应用程序目录，选择目录的概率与其大小成比例
     // randomly choose the local directory
     Path appStorageDir = getWorkingDir(localDirs, user, appId);
 
     String tokenFn = String.format(TOKEN_FILE_NAME_FMT, locId);
     Path tokenDst = new Path(appStorageDir, tokenFn);
+    // todo 复制文件
     copyFile(nmPrivateContainerTokensPath, tokenDst, user);
     LOG.info("Copying from {} to {}", nmPrivateContainerTokensPath, tokenDst);
 
@@ -254,6 +342,16 @@ public class DefaultContainerExecutor extends ContainerExecutor {
     return localizer;
   }
 
+  /**
+   * todo 启动Container
+   *   这个实现有一些问题，即，对于资源隔离做的并不好。
+   *   全部Container都是由运行NodeManager的那个用户启动的。
+   *
+   * @param ctx Encapsulates information necessary for launching containers.
+   * @return
+   * @throws IOException
+   * @throws ConfigurationException
+   */
   @Override
   public int launchContainer(ContainerStartContext ctx)
       throws IOException, ConfigurationException {
@@ -271,6 +369,7 @@ public class DefaultContainerExecutor extends ContainerExecutor {
     ContainerId containerId = container.getContainerId();
 
     // create container dirs on all disks
+    // todo 在所有磁盘上创建 container 目录
     String containerIdStr = containerId.toString();
     String appIdStr =
             containerId.getApplicationAttemptId().
@@ -285,8 +384,10 @@ public class DefaultContainerExecutor extends ContainerExecutor {
     }
 
     // Create the container log-dirs on all disks
+    // todo 在所有硬盘上创建 log 目录
     createContainerLogDirs(appIdStr, containerIdStr, logDirs, user);
 
+    // todo 创建临时文件目录：./tmp
     Path tmpDir = new Path(containerWorkDir,
         YarnConfiguration.DEFAULT_CONTAINER_TEMP_DIR);
     createDir(tmpDir, dirPerm, false, user);
@@ -315,6 +416,7 @@ public class DefaultContainerExecutor extends ContainerExecutor {
     copyFile(nmPrivateContainerScriptPath, launchDst, user);
 
     // Create new local launch wrapper script
+    // todo 创建新的本地启动包装脚本
     LocalWrapperScriptBuilder sb = getLocalWrapperScriptBuilder(
         containerIdStr, containerWorkDir); 
 
@@ -331,6 +433,7 @@ public class DefaultContainerExecutor extends ContainerExecutor {
 
     Path pidFile = getPidFilePath(containerId);
     if (pidFile != null) {
+      // todo 获取pidFile，写入启动脚本
       sb.writeLocalWrapperScript(launchDst, pidFile);
     } else {
       LOG.info("Container {} pid file not set. Returning terminated error",
@@ -349,9 +452,12 @@ public class DefaultContainerExecutor extends ContainerExecutor {
           containerIdStr, user, pidFile, container.getResource(),
           new File(containerWorkDir.toUri().getPath()),
           container.getLaunchContext().getEnvironment());
-      
+
+      // todo containerId 如果存活的话，启动命令
       if (isContainerActive(containerId)) {
+        // todo ------------- 启动 start -------------
         shExec.execute();
+        // todo ------------- 启动 end -------------
       } else {
         LOG.info("Container {} was marked as inactive. "
             + "Returning terminated error", containerIdStr);
