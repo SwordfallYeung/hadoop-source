@@ -168,6 +168,40 @@ import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.SettableFu
 
 import static org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacitySchedulerConfiguration.QUEUE_MAPPING;
 
+/**
+ * todo 以队列为单位划分资源，每个队列可设定一定比例的资源最低保证和使用上限，同时，每个用户也可设定一定的资源使用上限以防止资源滥用。
+ *    而当一个队列的资源有剩余时，可暂时将剩余资源共享给其他队列。总之，Capacity Scheduler主要有以下几个特点：
+ *    1. 容量保证：管理员可为每个队列设置资源最低保证和资源使用上限，而所有提交到该队列的应用程序共享这些资源；
+ *    2. 灵活性：如果一个队列中的资源有剩余，可以暂时共享给那些需要资源的队列，而一旦该队列有新的应用程序提交，则其他队列释放的资源会归还给该队列；
+ *    3. 多重租赁：支持多用户共享集群和多应用程序同时运行。为防止单个应用程序、用户或队列独占集群中的资源，管理员可为之增加多重约束（比如单个应用程序
+ *       同时运行的任务数等）；
+ *    4. 安全保证：每个队列有严格的ACL列表规定它的访问用户，每个用户可指定哪些用户允许查看自己应用程序的运行状态或者控制应用程序（比如杀死应用程序）。
+ *       此外，管理员可指定队列管理员和集群系统管理员；
+ *    5. 动态更新配置文件：管理员可根据需要动态修改各种配置参数，以实现在线集群管理。
+ *
+ * todo Capacity Scheduler的功能
+ *    1. Capacity Scheduler有自己的配置文件，即存放在conf目录下的capacity-scheduler.xml
+ *    2. 在Capacity Scheduler的配置文件中，队列queueX的参数Y的配置名称为yarn.scheduler.capacity.queueX.Y
+ *    3. 资源分配相关参数：
+ *        1. capacity：队列的最小资源容量（百分比）。注意：所有队列的容量之和应小于100
+ *        2. maximum-capacity：队列的资源使用上限
+ *        3. minimum-use-limit-percent：每个用户最低资源保障（百分比）
+ *        4. user-limit-factor：每个用户最多可使用的资源量（百分比）
+ *    4. 限制应用程序数目的相关参数：
+ *       1. maximum-applications：集群或者队列中处于等待和运行状态的应用程序数目上限，这是一个强限制项，一旦集群中应用程序数目超过该上限，
+ *       后续提交的应用程序将被拒绝。默认值为10000。Hadoop允许从集群和队列两个方面该值，其中，集群的总体数目上限可通过参数yarn.scheduler.capacity.maximum-applications设置，
+ *       默认为10000，而单个队列可通过参数yarn.scheduler.capacity.<queue-path>.maximum-applications设置适合自己的值；
+ *       2. maximum-am-resource-percent：集群中用于运行应用程序ApplicationMaster的资源比例上限，该参数通常用于限制处于活动状态的应用程序数目。
+ *       所有队列的ApplicationMaster资源比例上限可通过参数yarn.scheduler.capacity.maximum-am-resource-percent设置，而单个队列可通过参数yarn.scheduler.capacity.<queue-path>.maximum-am-resource-percent设置适合自己的值
+ *    5. 队列访问权限控制
+ *       1. state：队列状态，可以为STOPPED或者RUNNING。如果一个队列处于STOPPED状态，用户不可以将应用程序提交到该队列或者它的子队列中。类似的，如果root队列处于STOPPED状态，
+ *       则用户不可以向集群提交应用程序，但正在运行的应用程序可以正常运行结束，以便队列可以优雅地退出；
+ *       2. acl_submit_application：限定哪些用户/用户组可向给定队列中提交应用程序。该属性具有继承性，即如果一个用户可以向某个队列提交应用程序，则它可以向它所有子队列中提交应用程序；
+ *       3. acl_administer_queue：为队列指定一个管理员，该管理员可控制该队列的所有应用程序，比如杀死任意一个应用程序等。同样，该属性具有继承性，如果一个用户可以向某个队列中提交应用程序，
+ *       则它可以向它的所有子队列中提交应用程序；
+ *    6. 当管理员需动态修改队列资源配置时，可修改配置文件conf/capacity-scheduler.xml，然后运行“yarn rmadmin -refreshQueues”；
+ *    7. 当前Capacity Scheduler不允许管理员动态减少队列数目，且更新的配置参数值应是合法值，否则会导致配置文件加载失败；
+ */
 @LimitedPrivate("yarn")
 @Evolving
 @SuppressWarnings("unchecked")
