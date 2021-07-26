@@ -510,6 +510,7 @@ public class ResourceManager extends CompositeService
         YarnConfiguration.DEFAULT_RM_SCHEDULER);
     LOG.info("Using Scheduler: " + schedulerClassName);
     try {
+      // todo 默认调度器： org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler
       Class<?> schedulerClazz = Class.forName(schedulerClassName);
       if (ResourceScheduler.class.isAssignableFrom(schedulerClazz)) {
         return (ResourceScheduler) ReflectionUtils.newInstance(schedulerClazz,
@@ -814,6 +815,7 @@ public class ResourceManager extends CompositeService
       rmContext.setNodesListManager(nodesListManager);
 
       // Initialize the scheduler
+      // todo ResourceScheduler调度器的创建，他的子类之一就是FairScheduler
       scheduler = createScheduler();
       scheduler.setRMContext(rmContext);
       addIfService(scheduler);

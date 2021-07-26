@@ -201,6 +201,9 @@ import static org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.C
  *       则它可以向它的所有子队列中提交应用程序；
  *    6. 当管理员需动态修改队列资源配置时，可修改配置文件conf/capacity-scheduler.xml，然后运行“yarn rmadmin -refreshQueues”；
  *    7. 当前Capacity Scheduler不允许管理员动态减少队列数目，且更新的配置参数值应是合法值，否则会导致配置文件加载失败；
+ *
+ * todo CapacityScheduler继承接口：
+ *    主要关心的接口是YarnScheduler，实现的抽象类为AbstractYarnScheduler，AbstractYarnScheduler实现了ResourceScheduler，ResourceScheduler继承了YarnScheduler
  */
 @LimitedPrivate("yarn")
 @Evolving
