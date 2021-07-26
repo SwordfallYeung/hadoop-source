@@ -129,6 +129,46 @@ import org.slf4j.LoggerFactory;
  * @see DefaultLinuxContainerRuntime
  * @see DockerLinuxContainerRuntime
  * @see OCIContainerRuntime#isOCICompliantContainerRequested
+ *
+ * todo LinuxContainerExecutor，简称LCE，每个Container由不同的用户启动。比如A用户提交的job的container，都由A用户启动。
+ *   此外支持cgroup、支持单独的配置文件、支持简单的ACL。
+ *
+ * todo LCE 明显隔离性更好，但有一些限制：
+ *   1. 需要linux native程序支持。准确的说是一个container-executor程序，用C写的，代码见hadoop-yarn-project\hadoop-
+ *   yarn\hadoop-yarn-server\hadoop-yarn-server-nodemanager\src\main\native\container-executor。编译hadoop时务必
+ *   同时编译container-executor。container-executor的路径由属性yarn.nodemanager.linux-container-executor.path指定。
+ *   2. container-executor还需要一个配置文件container-executor.cfg。而且这个配置文件和container-executor的二进制文件相对
+ *   路径是固定的。默认情况下container-executor会去../etc/hadoop路径下寻找配置文件，找不到的话会报错。可以在编译hadoop时指定：
+ *   mvn package -Pdist,native -DskipTests -Dtar -Dcontainer-executor.conf.dir=../../conf。
+ *   3. 由于用不同的用户启动Container，所以必须有对应的Linux用户存在。否则会抛出异常。这带来一些管理上的麻烦，比如新增一个用户B时，
+ *   必须在所有节点上执行useradd B。
+ *   4. container-executor和container-executor.cfg的所有者必须是root。而且他们所在的目录一直上溯到/，所有者也必须是root。所以
+ *   我们一般把这两个文件放在/etc/yarn下。
+ *   5. container-executor文件的权限必须是6050 or --Sr-s---，因为它的原理就是setuid/setgid。group owner必须和启动NM的用户同步。
+ *   比如NM由yarn用户启动，yarn用户属于hadoop组，那么container-executor必须也是hadoop组。
+ *
+ * todo 内存隔离
+ *   YARN对内存其实没有真正隔离，而是监视Container进行的内存使用，超出限制后直接杀掉进程。相关逻辑见ContainersMonitorImpl类。进程监控
+ *   的逻辑ProcfsBasedProcessTree类，原理就是读取/proc/$pid下面的文件，获得进程的内存占用。
+ * todo CPU隔离
+ *   YARN在默认情况下，完全没有考虑CPU的隔离，即使用了LCE。所以如果某个任务是CPU密集型的，可能消耗掉整个NM的CPU。（跟具体的应用有关，
+ *   对MR而言，最多用满一个核吧。）
+ * todo cgroup
+ *   YARN支持cgroup隔离CPU资源：YARN-3。cgroup必须要LCE，但默认情况下没有开启。可以设置属性yarn.nodemanager.linux-container-executor.resources-handler.class
+ *   为org.apache.hadoop.yarn.server.nodemanager.util.CgroupsLCEResourcesHandler开启。关于cgroup还有很多属性可以调整，见yarn-default.xml中的配置
+ * todo localize过程
+ *    ContainerExecutor类似于以前的distributed cache，但是YARN做的更通用了。
+ *    主要是分发container运行需要的所有文件，包括一些lib、token等等。这个过程称为localize，由ResourceLocalizationService类负责。
+ *    分几步：
+ *        1. 建相关目录。
+ *           $local.dir/usercache/$user/filecache，用于暂存用户可见的distributed cache；
+ *           $local.dir/usercache/$user/appcache/$appid/filecache，用于暂存app可见的distributed cache；
+ *           $log.dir/$appid/$containerid，用于暂存日志；
+ *           这里只列出了最深一级目录，父目录不存在也会新建。对DCE而言，直接用java代码建这些目录。对于LCE，调用container-executor建目录，见上文的container-executor的Usage。
+ *           注意这些目录会在所有磁盘上建（我们的节点一般是12块盘，就建12次），但只有一个会被真正使用。
+ *        2. 将token文件写到$local.dir/usercache/$user/appcache/$appid目录。这里有bug，无论DCE还是LCE，都会将token文件写到第一个local-dir，所以可能会有竞争，导致后续container启动失败。
+ *        3. 对于DCE，直接new一个ContainerLocalizer对象，调用runLocalization方法。这个方法的作用是从ResourceLocalizationService处获取要分发的URI，并下载到本地。
+ *           对于LCE，会单独启动一个JVM进程，通过RPC协议LocalizationProtocol与ResourceLocalizationService通信，功能是一样的。
  */
 public class LinuxContainerExecutor extends ContainerExecutor {
 
@@ -242,6 +282,7 @@ public class LinuxContainerExecutor extends ContainerExecutor {
     }
   }
 
+  // todo 在3.3.1版本 LCEResourcesHandler即将注销掉
   private LCEResourcesHandler getResourcesHandler(Configuration conf) {
     LCEResourcesHandler handler = ReflectionUtils.newInstance(
         conf.getClass(YarnConfiguration.NM_LINUX_CONTAINER_RESOURCES_HANDLER,
