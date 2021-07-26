@@ -75,6 +75,52 @@ import static org.apache.hadoop.hdfs.client.HdfsClientConfigKeys.DFS_NAMENODE_KE
  *  如果远程进程在调用过程中出现异常，本地进程也会收到对应的异常。
  *
  * todo 目前Hadoop RPC调用是基于Protobuf(2.5.0版本)实现的。
+ *
+ * todo 接口协议概述
+ *                                           NameNode  <——NameNodeProtocol——> SecondaryNameNode
+ *                                    /     /   \     \
+ *                                 /      /      \       \
+ *                 ClientProtocol       /         \        \
+ *                 /               Datanode     Datanode     Datanode
+ *                /               Protocol      Protocol       Protocol
+ *           Client                 /               \                 \
+ *               \                 /                 \                 \
+ *         ClientDataNodeProtocol /                   \                 \
+ *                         \     /                     \                 \
+ *                          DataNode<——InterNode——>DataNode<——InterNode——>DataNode
+ *                                     Protocol               Protocol
+ *  1. ClientProtocol:
+ *     客户端与NameNode间通讯接口。客户端对文件系统的所有操作都需要通过这个接口，同时客户端读、写文件等操作也需要
+ *     先通过这个接口与NameNode协商之后，再进行数据块的读出和写入操作。
+ *  2. ClientDatanodeProtocol:
+ *     客户端与数据节点间的接口。ClientDatanodeProtocol中定义的方法主要是用户客户端获取数据节点信息时调用，而
+ *     真正的数据读写交互则是通过流式接口进行的。
+ *  3. DatanodeProtocol:
+ *     DataNode与NameNode通信，同时NameNode会通过这个接口中方法的返回值向数据节点下发指令。
+ *     DataNode会通过这个接口向NameNode注册、汇报数据块的全量以及增量的存储情况。同时，NameNode
+ *     也会通过这个接口中方法的返回值，向NameNode指令带回该数据块，根据这些指令，数据节点会执行数据块
+ *     的复制、删除以及恢复操作。
+ *  4. InterDatanodeProtocol:
+ *     DataNode与DataNode间的接口，数据节点会通过这个接口和其他数据节点通信。这个接口主要用于数据块的恢复操作，
+ *     以及同步数据节点上存储的数据块副本的信息。
+ *  5. NameNodeProtocol:
+ *     SecondaryNameNode与NameNode间的接口。
+ *  6. DataTransferProtocol:
+ *     DataTransferProtocol是用来描述写入或者读出Datanode上数据的基于TCP的流式接口，HDFS客户端与数据节点以及
+ *     数据节点与数据节点之间的数据块传输就是基于DataTransferProtocol接口实现的。
+ *  7. 其他接口:
+ *     主要包括安全相关接口（RefreshAuthorizationPolicyProtocol、RefreshUser MappingsProtocol）、
+ *     HA相关接口（HAServiceProtocol）等
+ *
+ * todo ClientProtocol定义了所有由客户端发起的、由NameNode响应的操作。
+ *    按照接口方法分类：
+ *    1. HDFS文件读相关的操作；
+ *    2. HDFS文件写以及追加写的相关操作；
+ *    3. 管理HDFS命名空间（namespace）的相关操作；
+ *    4. 系统问题与管理相关的操作；
+ *    5. 快照相关的操作；
+ *    6. 缓存相关的操作；
+ *    7. 其他操作；
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
