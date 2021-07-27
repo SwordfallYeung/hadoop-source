@@ -155,6 +155,8 @@ public interface ClientProtocol {
   ///////////////////////////////////////
   // File contents
   ///////////////////////////////////////
+  // todo ClientProtocol中客户端读取文件相关的方法主要有两个：getBlockLocations()和reportBadBlocks().
+
   /**
    * Get locations of the blocks of the specified file
    * within the specified range.
@@ -182,6 +184,17 @@ public interface ClientProtocol {
    * @throws org.apache.hadoop.fs.UnresolvedLinkException If <code>src</code>
    *           contains a symlink
    * @throws IOException If an I/O error occurred
+   *
+   * todo 客户端调用ClientProtocol.getBlockLocations()方法
+   *    获取HDFS文件指定范围内所有数据块的位置信息。
+   *
+   * todo 这个方法的参数是HDFS文件的文件名以及读取范围，返回值是文件指定范围内所有数据块的文件名以及它们的位置信息，
+   *    使用LocatedBlocks
+   *
+   * todo 每个数据块的位置信息指的是存储这个数据块副本的所有Datanode的信息，这些Datanode会以与当前客户端的距离远近排序。
+   *
+   * todo 客户端读取数据时，会首先调用getBlockLocations()方法获取HDFS文件的所有数据块的位置信息，然后客户端会根据这些
+   *      位置信息从数据节点读取数据块。
    */
   @Idempotent
   @ReadOnly(atimeAffected = true, isCoordinated = true)
@@ -196,6 +209,11 @@ public interface ClientProtocol {
   @Idempotent
   @ReadOnly(isCoordinated = true)
   FsServerDefaults getServerDefaults() throws IOException;
+
+  /**
+   * todo 支持HDFS的写操作：create()、append()、addBlock()、complete()、abandonBlock()、
+   *  updateBlockForPipline()和updatePipline()等等...
+   */
 
   /**
    * Create a new file entry in the namespace.
@@ -259,6 +277,13 @@ public interface ClientProtocol {
    *           invalid
    * <p>
    * <em>Note that create with {@link CreateFlag#OVERWRITE} is idempotent.</em>
+   * todo create()方法用于在HDFS的文件系统目录树中创建一个新的空文件，创建的路径由src参数指定。
+   *    这个空文件创建后对于其他的客户端是“可读”的，但是这些客户端不能删除、重命名或者移动这个文件，
+   *    直到这个文件被关闭或者租约过期。
+   *
+   * todo 客户端写一个新的文件时，会首先调用create()方法在文件系统目录树中创建一个空文件，
+   *    然后调用addBlock()方法获取存储文件数据的数据块的位置信息，最后客户端就可以根据位置
+   *    信息建立数据流管道，向数据节点写入数据了。
    */
   @AtMostOnce
   HdfsFileStatus create(String src, FsPermission masked,
@@ -297,6 +322,15 @@ public interface ClientProtocol {
    *
    * RuntimeExceptions:
    * @throws UnsupportedOperationException if append is not supported
+   *
+   * todo append()方法用于打开一个已有的文件，
+   *   如果这个文件的最后一个数据块没有写满，则返回这个数据块的位置信息（使用LocatedBlock对象封装）；
+   *   如果这个文件的最后一个数据块正好写满，则创建一个新的数据块并添加到这个文件中，然后返回这个新添加
+   *   的数据块的位置信息。
+   *
+   * todo 客户端追加写一个已有文件时，会先调用append()方法获取最后一个可写数据块的位置信息，
+   *    然后建立数据流管道，并向数据节点写入追加的数据。如果客户端将这个数据块写满，与create()方法一样，
+   *    客户端会调用addBlock()方法获取新的数据块。
    */
   @AtMostOnce
   LastBlockWithStatus append(String src, String clientName,
@@ -439,6 +473,15 @@ public interface ClientProtocol {
    * @throws org.apache.hadoop.fs.UnresolvedLinkException If <code>src</code>
    *           contains a symlink
    * @throws IOException If an I/O error occurred
+   *
+   * todo abandonBlock()方法用于处理客户端建立数据流管道时数据节点出现故障的情况
+   *    客户端调用abandonBlock()方法放弃一个新申请的数据块。
+   *
+   * todo 问题1:创建数据块失败？？？
+   *      当客户端获取了一个新申请的数据块，发现无法建立到存储这个数据块副本的某些数据节点的连接时，
+   *      会调用abandonBlock()方法通知各子节点放弃这个数据块，之后客户端会再次调用addBlock()方法
+   *      获取新的数据块，并在传入参数时将无法连接的数据节点放入excludeNodes参数列表中，以避免NameNode
+   *      将数据块的副本分配到该节点上，造成客户端再次无法连接这个节点的情况。
    */
   @Idempotent
   void abandonBlock(ExtendedBlock b, long fileId,
@@ -481,6 +524,18 @@ public interface ClientProtocol {
    * @throws org.apache.hadoop.fs.UnresolvedLinkException If <code>src</code>
    *           contains a symlink
    * @throws IOException If an I/O error occurred
+   *
+   * todo 客户端调用addBlock()方法向指定文件添加一个新的数据块，并获取存储这个数据块副本的所有
+   *    数据节点的位置信息（使用LocatedBlock对象封装）
+   *
+   * todo 要特别注意的是，调用addBlock()方法时还要传上一个数据块的引用。NameNode在分配新的数据块时，
+   *    会顺便提交上一个数据块，这里previous参数就是上一个数据块的引用。
+   *
+   * todo excludeNodes参数则是数据节点的黑名单，保存了客户端无法连接的一些数据节点，建议NameNode在
+   *    分配保存数据块副本的数据节点时不要考虑这些节点。
+   *
+   * todo favoredNodes参数则是客户端所希望的保存数据块副本的数据节点的列表。客户端调用addBlock()方法获取
+   *    新的数据块的位置信息后，会建立到这些数据节点的数据流管道，并通过数据流管道将数据写入数据节点。
    */
   @Idempotent
   LocatedBlock addBlock(String src, String clientName,
@@ -550,6 +605,12 @@ public interface ClientProtocol {
    * @throws org.apache.hadoop.fs.UnresolvedLinkException If <code>src</code>
    *           contains a symlink
    * @throws IOException If an I/O error occurred
+   *
+   * todo 当客户端完成了整个文件的写入操作后，会调用complete()方法通知Namenode。
+   *    这个操作会提交新写入HDFS文件的所有数据块，当这些数据块的副本数量满足系统配置的
+   *    最小副本系数（默认值为1），也就是该文件的所有数据块至少有一个有效副本时，complete()
+   *    方法会返回true，这时Namenode中文件的状态也会从构建中状态转换为正常状态；否则，
+   *    complete()会返回false，客户端就需要重复调用complete()操作，直至该方法返回true。
    */
   @Idempotent
   boolean complete(String src, String clientName,
@@ -560,6 +621,10 @@ public interface ClientProtocol {
    * The client wants to report corrupted blocks (blocks with specified
    * locations on datanodes).
    * @param blocks Array of located blocks to report
+   *
+   * todo 客户端会调用ClientProtocol.reportBadBlocks()方法向Namenode汇报错误的数据块。
+   *    当客户端从数据节点读取数据块且发现数据块的校验不正确时，就会调用这个方法向Namenode
+   *    汇报这个错误的数据块信息。
    */
   @Idempotent
   void reportBadBlocks(LocatedBlock[] blocks) throws IOException;
@@ -882,6 +947,8 @@ public interface ClientProtocol {
    * One DatanodeInfo object is returned for each DataNode.
    * Return live datanodes if type is LIVE; dead datanodes if type is DEAD;
    * otherwise all datanodes if type is ALL.
+   *
+   * todo 获取集群DataNode信息    DFSAdmin参数：-report  DFSClient方法：datanodeReport
    */
   @Idempotent
   @ReadOnly
@@ -968,6 +1035,8 @@ public interface ClientProtocol {
    *         <li>1 if the safe mode is ON.</li></ul>
    *
    * @throws IOException
+   *
+   * todo 进入/离开或者查询安全模式【安全模式中的HDFS为只读】   DFSAdmin参数：-safemode  DFSClient方法：setSafeMode
    */
   @Idempotent
   boolean setSafeMode(HdfsConstants.SafeModeAction action, boolean isChecked)
@@ -986,6 +1055,8 @@ public interface ClientProtocol {
    * @return whether an extra checkpoint has been done
    *
    * @throws IOException if image creation failed.
+   *
+   * todo 保存当前NameNode的元数据到fsimage DFSAdmin参数：-saveNamespace DFSClient方法：saveNamespace
    */
   @AtMostOnce
   boolean saveNamespace(long timeWindow, long txGap) throws IOException;
@@ -998,6 +1069,8 @@ public interface ClientProtocol {
    *           privilege is violated
    * @throws IOException if log roll fails
    * @return the txid of the new segment
+   *
+   * todo 提交当前的edits_inprogress文件 DFSAdmin参数：-rollEdits  DFSClient方法：rollEdits
    */
   @Idempotent
   long rollEdits() throws IOException;
@@ -1009,6 +1082,8 @@ public interface ClientProtocol {
    *
    * @throws org.apache.hadoop.security.AccessControlException if the superuser
    *           privilege is violated.
+   *
+   * todo 开启或者关闭失败存储的恢复 DFSAdmin参数：-restoreFailedStorage DFSClient方法：restoreFailedStorage
    */
   @Idempotent
   boolean restoreFailedStorage(String arg) throws IOException;
@@ -1016,6 +1091,8 @@ public interface ClientProtocol {
   /**
    * Tells the namenode to reread the hosts and exclude files.
    * @throws IOException
+   *
+   * todo 刷新host以及exclude【黑名单】文件  DFSAdmin参数：-refreshNodes   DFSClient方法：refreshNodes
    */
   @Idempotent
   void refreshNodes() throws IOException;
@@ -1026,6 +1103,8 @@ public interface ClientProtocol {
    * The upgrade will become irreversible.
    *
    * @throws IOException
+   *
+   * todo 提交升级     DFSAdmin参数： -finalizeUpgrade   DFSClient方法：finalizeUpgrade
    */
   @Idempotent
   void finalizeUpgrade() throws IOException;
@@ -1044,6 +1123,8 @@ public interface ClientProtocol {
    * @param action either query, prepare or finalize.
    * @return rolling upgrade information. On query, if no upgrade is in
    * progress, returns null.
+   *
+   * todo 进行升级     DFSAdmin参数：-rollingUpgrade   DFSClient方法：rollingUpgrade
    */
   @Idempotent
   RollingUpgradeInfo rollingUpgrade(RollingUpgradeAction action)
@@ -1079,6 +1160,8 @@ public interface ClientProtocol {
    *
    * @param bandwidth Blanacer bandwidth in bytes per second for this datanode.
    * @throws IOException
+   *
+   * todo 设置平衡操作时的带宽    DFSAdmin参数：-setBalancerBandwidth  DFSClient方法：setBalancerBandwidth
    */
   @Idempotent
   void setBalancerBandwidth(long bandwidth) throws IOException;
@@ -1189,6 +1272,9 @@ public interface ClientProtocol {
    *           <code>path</code> contains a symlink.
    * @throws SnapshotAccessControlException if path is in RO snapshot
    * @throws IOException If an I/O error occurred
+   *
+   * todo 重置Namespace配额/设置Namespace配额   DFSAdmin参数：-clrQuota/-setQuota           DFSClient方法：setQuota
+   *      重置磁盘空间配额/设置磁盘空间配额      DFSAdmin参数：-clrSpaceQuota/-setSpaceQuota  DFSClient方法：setQuota
    */
   @Idempotent
   void setQuota(String path, long namespaceQuota, long storagespaceQuota,
@@ -1345,11 +1431,20 @@ public interface ClientProtocol {
   DataEncryptionKey getDataEncryptionKey() throws IOException;
 
   /**
+   * todo 快照保存了一个时间点上HDFS某个路径中所有数据的拷贝，快照可以将失效的集群回滚到之前一个正常的时间点上。用户可以通过
+   *  'hdfs dfs'命令执行创建、删除以及重命名快照等操作，ClientProtocol也定义了对应的方法来支持快照命令。
+   *
+   * todo 在创建快照之前，必须先通过'hdfs dfsadamin-allowSnapshot'命令开启目录的快照功能，否则不可以在该目录上创建快照。
+   */
+
+  /**
    * Create a snapshot.
    * @param snapshotRoot the path that is being snapshotted
    * @param snapshotName name of the snapshot created
    * @return the snapshot path.
    * @throws IOException
+   *
+   * todo 创建快照    对应的命令：hdfs dfs -createSnapshot
    */
   @AtMostOnce
   String createSnapshot(String snapshotRoot, String snapshotName)
@@ -1360,6 +1455,8 @@ public interface ClientProtocol {
    * @param snapshotRoot  The snapshottable directory
    * @param snapshotName Name of the snapshot for the snapshottable directory
    * @throws IOException
+   *
+   * todo 删除快照   对应的命令：hdfs dfs -deleteSnapshot
    */
   @AtMostOnce
   void deleteSnapshot(String snapshotRoot, String snapshotName)
@@ -1371,6 +1468,8 @@ public interface ClientProtocol {
    * @param snapshotOldName old name of the snapshot
    * @param snapshotNewName new name of the snapshot
    * @throws IOException
+   *
+   * todo 重命名快照   对应的命令：hdfs dfs -renameSnapshot <path><oldName> <newName>
    */
   @AtMostOnce
   void renameSnapshot(String snapshotRoot, String snapshotOldName,
@@ -1380,6 +1479,10 @@ public interface ClientProtocol {
    * Allow snapshot on a directory.
    * @param snapshotRoot the directory to be snapped
    * @throws IOException on error
+   *
+   * todo 开启指定目录的快照功能   DFSAdmin参数：-allowSnapshot  DFSClient方法：allowSnapshot
+   *
+   * todo 开启指定目录的快照功能。一个目录必须在开启快照功能之后才可以添加快照    对应的命令：dfs dfsadmin -allowSnapshot <path>
    */
   @Idempotent
   void allowSnapshot(String snapshotRoot)
@@ -1389,6 +1492,10 @@ public interface ClientProtocol {
    * Disallow snapshot on a directory.
    * @param snapshotRoot the directory to disallow snapshot
    * @throws IOException on error
+   *
+   * todo 关闭指定目录的快照功能   DFSAdmin参数：-disallowSnapshot  DFSClient方法：disallowSnapshot
+   *
+   * todo 关闭指定目录的快照功能  对应的命令：hdfs dfs -disallowSnapshot <path><snapshotName>
    */
   @Idempotent
   void disallowSnapshot(String snapshotRoot)
@@ -1408,6 +1515,8 @@ public interface ClientProtocol {
    *          tree.
    * @return The difference report represented as a {@link SnapshotDiffReport}.
    * @throws IOException on error
+   *
+   * todo 获取两个快照间的不同   对应的命令：hdfs snapshotDiff <path><fromSnapshot> <toSnapshot>
    */
   @Idempotent
   @ReadOnly(isCoordinated = true)
@@ -1444,12 +1553,22 @@ public interface ClientProtocol {
       throws IOException;
 
   /**
+   * todo 缓存相关
+   *    用户可以指定一些经常被使用的数据或者高优先级任务对应的数据，让它们常驻内存而不被淘汰到磁盘上。
+   *    这里涉及两个概念：
+   *    1. cache directive：表示要被缓存到内存中的文件或者目录
+   *    2. cache pool：用于管理一系列的cache directive，类似于命名空间。同时使用UNIX风格的文件读、写、执行权限管理机制。
+   */
+
+  /**
    * Add a CacheDirective to the CacheManager.
    *
    * @param directive A CacheDirectiveInfo to be added
    * @param flags {@link CacheFlag}s to use for this operation.
    * @return A CacheDirectiveInfo associated with the added directive
    * @throws IOException if the directive could not be added
+   *
+   * todo 添加一个缓存  对应的命令：hdfs cacheadmin -addDirective -path <path> -pool <pool-name>[-force][-replication <replication>][ttl <time-to-live>]
    */
   @AtMostOnce
   long addCacheDirective(CacheDirectiveInfo directive,
@@ -1460,6 +1579,8 @@ public interface ClientProtocol {
    *
    * @param flags {@link CacheFlag}s to use for this operation.
    * @throws IOException if the directive could not be modified
+   *
+   * todo 修改缓存   对应的命令：-modifyDirective
    */
   @AtMostOnce
   void modifyCacheDirective(CacheDirectiveInfo directive,
@@ -1470,6 +1591,8 @@ public interface ClientProtocol {
    *
    * @param id of a CacheDirectiveInfo
    * @throws IOException if the cache directive could not be removed
+   *
+   * todo 删除缓存   对应的命令：hdfs cacheadmin -removeDirective <id>
    */
   @AtMostOnce
   void removeCacheDirective(long id) throws IOException;
@@ -1483,6 +1606,8 @@ public interface ClientProtocol {
    * @param filter Parameters to use to filter the list results,
    *               or null to display all directives visible to us.
    * @return A batch of CacheDirectiveEntry objects.
+   *
+   * todo 列出指定路径下的所有缓存   对应的命令：hdfs cacheadmin -listDirectives [-stats] -path <path> [-pool <pool>]
    */
   @Idempotent
   @ReadOnly(isCoordinated = true)
@@ -1494,6 +1619,8 @@ public interface ClientProtocol {
    *
    * @param info Description of the new cache pool
    * @throws IOException If the request could not be completed.
+   *
+   * todo 添加一个缓存池   对应的命令：hdfs cacheadmin -addPool <name>[-owner<owner>][-group <group>][-mode <mode>][-limit <limit>][-maxTtl <maxTtl>]
    */
   @AtMostOnce
   void addCachePool(CachePoolInfo info) throws IOException;
@@ -1505,6 +1632,8 @@ public interface ClientProtocol {
    *          The request to modify a cache pool.
    * @throws IOException
    *          If the request could not be completed.
+   *
+   * todo 修改已有缓存池的元数据 对应的命令：hdfs cacheadmin -addPool <name>[-owner<owner>][-group <group>][-mode <mode>][-limit <limit>][-maxTtl <maxTtl>]
    */
   @AtMostOnce
   void modifyCachePool(CachePoolInfo req) throws IOException;
@@ -1515,6 +1644,8 @@ public interface ClientProtocol {
    * @param pool name of the cache pool to remove.
    * @throws IOException if the cache pool did not exist, or could not be
    *           removed.
+   *
+   * todo 删除缓存池  对应的命令：hdfs cacheadmin removePool <name>
    */
   @AtMostOnce
   void removeCachePool(String pool) throws IOException;
@@ -1525,6 +1656,8 @@ public interface ClientProtocol {
    * @param prevPool name of the last pool listed, or the empty string if this
    *          is the first invocation of listCachePools
    * @return A batch of CachePoolEntry objects.
+   *
+   * todo 列出已有缓存池的信息，包括用户名、用户组、权限等 对应的命令：hdfs cacheadmin -listPool [-stats][name]
    */
   @Idempotent
   @ReadOnly(isCoordinated = true)
