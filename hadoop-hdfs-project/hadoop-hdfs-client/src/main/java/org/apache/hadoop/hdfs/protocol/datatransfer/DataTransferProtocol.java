@@ -37,6 +37,16 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Transfer data to/from datanode using a streaming protocol.
+ *
+ * todo DataTransferProtocol是用来描述写入或者读出Datanode上数据的基于TCP的流式接口，HDFS客户端与数据节点以及
+ *      数据节点与数据节点之间的数据块传输就是基于DataTransferProtocol接口实现的。
+ *
+ * todo DataTransferProtocol接口调用并没有使用Hadoop RPC框架提供的功能，而是定义了用于发送DataTransferProtocol请求的Sender类，
+ *      以及用于响应DataTransferProtocol请求的Receiver类，
+ *
+ * todo Sender类和Receiver类都实现了DataTransferProtocol接口。我们假设DFSClient发起了一个DataTransferProtocol.readBlock()操作，
+ *      那么DFSClient会调用Sender将这个请求序列化，并传输给远端的Receiver。远端的Receiver接收到这个请求后，会发序列化请求，然后调用
+ *      代码执行读取操作。
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
@@ -64,6 +74,8 @@ public interface DataTransferProtocol {
    * @param sendChecksum if false, the DN should skip reading and sending
    *        checksums
    * @param cachingStrategy  The caching strategy to use.
+   *
+   * todo 从当前DataNode读取指定的数据块。
    */
   void readBlock(final ExtendedBlock blk,
       final Token<BlockTokenIdentifier> blockToken,
@@ -107,6 +119,8 @@ public interface DataTransferProtocol {
    *                  has not been provided.
    * @param targetStorageIDs target StorageIDs corresponding to the target
    *                         datanodes.
+   *
+   * todo 将指定数据块写入数据流管道(pipeLine)中
    */
   void writeBlock(final ExtendedBlock blk,
       final StorageType storageType,
@@ -139,6 +153,10 @@ public interface DataTransferProtocol {
    * @param targets target datanodes.
    * @param targetStorageIDs StorageID designating where to write the
    *                     block.
+   *
+   * todo 将指定数据块复制(transfer)到另一个DataNode上。
+   *      数据块复制操作是指数据流管道中的数据节点出现故障，需要用新的数据节点替换异常的数据节点时，
+   *      DFSClient会调用这个方法将数据流管道中异常数据节点上已经写入的数据块复制到新添加的数据节点上。
    */
   void transferBlock(final ExtendedBlock blk,
       final Token<BlockTokenIdentifier> blockToken,
@@ -158,6 +176,8 @@ public interface DataTransferProtocol {
    *                          can understand.
    * @param supportsReceiptVerification  True if the client supports
    *                          receipt verification.
+   *
+   * todo 获取一个短路(short circuit)读取数据块的文件描述符
    */
   void requestShortCircuitFds(final ExtendedBlock blk,
       final Token<BlockTokenIdentifier> blockToken,
@@ -168,6 +188,8 @@ public interface DataTransferProtocol {
    * Release a pair of short-circuit FDs requested earlier.
    *
    * @param slotId          SlotID used by the earlier file descriptors.
+   *
+   * todo 释放一个短路读取数据块的文件描述符
    */
   void releaseShortCircuitFds(final SlotId slotId) throws IOException;
 
@@ -175,6 +197,8 @@ public interface DataTransferProtocol {
    * Request a short circuit shared memory area from a DataNode.
    *
    * @param clientName       The name of the client.
+   *
+   * todo 获取保存短路读取数据块的共享内存
    */
   void requestShortCircuitShm(String clientName) throws IOException;
 
@@ -192,6 +216,9 @@ public interface DataTransferProtocol {
    * @param source the source datanode for receiving the block.
    * @param storageId an optional storage ID to designate where the block is
    *                  replaced to.
+   *
+   * todo 将从源DataNode复制来的数据块写入本地DataNode。写成功后通知NameNode，并且删除源DataNode上的数据块。
+   *      这个方法主要用在数据块平衡操作(balancing)的场景下，source datanode 和 original datanode 必须不同.
    */
   void replaceBlock(final ExtendedBlock blk,
       final StorageType storageType,
@@ -206,6 +233,8 @@ public interface DataTransferProtocol {
    *
    * @param blk the block being copied.
    * @param blockToken security token for accessing the block.
+   *
+   * todo 复制当前DataNode上的数据块。这个方法主要用在数据块平衡操作的场景下。
    */
   void copyBlock(final ExtendedBlock blk,
       final Token<BlockTokenIdentifier> blockToken) throws IOException;
@@ -218,6 +247,8 @@ public interface DataTransferProtocol {
    * @param blockChecksumOptions determines how the block-level checksum is
    *     computed from underlying block metadata.
    * @throws IOException
+   *
+   * todo 获取指定数据块的校验值。
    */
   void blockChecksum(ExtendedBlock blk,
       Token<BlockTokenIdentifier> blockToken,
