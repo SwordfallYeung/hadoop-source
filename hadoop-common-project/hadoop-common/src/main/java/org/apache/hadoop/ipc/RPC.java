@@ -81,6 +81,40 @@ import org.slf4j.LoggerFactory;
  *
  * All methods in the protocol should throw only IOException.  No field data of
  * the protocol instance is transmitted.
+ *
+ * todo RPC(Remote Procedure Call)即远程过程调用，是一种通过网络从远程计算机程序上请求服务的协议。RPC允许本地程序像调用本地方法
+ *      一样调用远程计算机上的应用程序，其使用常见的网络传输协议(如TCP或UDP)传递RPC请求以及相应信息，使得分布式程序的开发更加容易。
+ *      Hadoop作为分布式存储系统，各个节点之间的通信和交互是必不可少的，所以需要实现一套节点间的通信交互机制。
+ *
+ * todo Hadoop实现了一套自己的RPC框架。采用了JavaNIO、Java动态代理以及protobuf等基础技术
+ *      RPC采用客户端/服务器模式，请求程序就是一个客户端，而服务提供程序就是一个服务器。客户端首先会发送一个有参数的调用请求到服务器，
+ *      然后等待服务器发回响应信息。在服务器端，服务提供程序会保持睡眠状态直到有调用请求到达为止。当一个调用请求到达后，服务提供程序
+ *      会执行调用请求，计算结果，向客户端发送响应信息，然后等待下一个调用请求。最后，客户端成功地接收服务器发回的响应信息，一个远程调用结束。
+ *
+ * todo        client functions                              server functions
+ *  ① rpc call  .|  |` ⑩ rpc return                 ⑤ local call `|  |. ⑥ local return
+ *            client sub                                       server stub
+ *      ② send  .|  |` ⑨ receive   ③ network          ④ receive  `| |. ⑦ send
+ *              sockets        ——————————————————>              sockets
+ *                             <——————————————————
+ *                                 ⑧ network
+ *  RPC框架工作原理示例图如上：
+ *  1. client functions：请求程序，会像调用本地方法一样调用客户端stub程序（图1），然后接收stub程序的响应信息（图10）；
+ *  2. client stub：客户端stub程序，表现得就像本地程序一样，但底层却会调用请求和参数序列化并通过通信模块发送给服务器（图2）；
+ *  3. sockets：网络通信模块，用于传输RPC请求和响应（图3和8），可以基于TCP或UDP协议；
+ *  4. server stub：服务端stub程序，会接收客户端发送的请求和参数（图4）并发序列化，根据调用信息触发对应的服务程序（图5），
+ *     然后将服务程序的响应信息（图6），序列化并发回给客户端（图7）；
+ *  5. server functions：服务程序，会接收服务端stub程序的调用请求（图5），执行对应的逻辑并返回执行结果（图6）。
+ *
+ * todo Hadoop RPC实现
+ *      HadoopRPC实现方式跟上图一样，代码位于hadoop-common中的org.apache.hadoop.ipc包下。
+ *      Hadoop RPC框架主要由三个类组成：RPC、Client和Server类。
+ *          1. RPC类用于对外提供一个使用Hadoop RPC框架的接口；
+ *          2. Client类用于实现RPC客户端功能；
+ *          3. Server类则用于实现RPC服务器端功能。
+ *
+ *  todo 在test编写demo，采用的是hadoop默认的RPC Engine: WritableRpcEngine，采用proto协议。
+ *  
  */
 @InterfaceAudience.LimitedPrivate(value = { "Common", "HDFS", "MapReduce", "Yarn" })
 @InterfaceStability.Evolving
