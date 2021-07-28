@@ -114,7 +114,7 @@ import org.slf4j.LoggerFactory;
  *          3. Server类则用于实现RPC服务器端功能。
  *
  *  todo 在test编写demo，采用的是hadoop默认的RPC Engine: WritableRpcEngine，采用proto协议。
- *  
+ *
  */
 @InterfaceAudience.LimitedPrivate(value = { "Common", "HDFS", "MapReduce", "Yarn" })
 @InterfaceStability.Evolving
