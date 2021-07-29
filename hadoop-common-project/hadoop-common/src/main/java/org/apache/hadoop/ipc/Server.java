@@ -161,6 +161,20 @@ import org.slf4j.LoggerFactory;
  *    |              |  N <———   |   ———————————————————                |        —————————————  |     |
  *    |              |           |         ‘|’ response Queue <————————  —————————————————————————    |
  *    ————————————————           ——————————————————————————————————————————————————————————————————————
+ *
+ * todo Server组件讲解：
+ *      1. Listener：Listener对象中存在一个Selector对象acceptSelector，负责监听来自客户端的Socket连接请求。当acceptSelector监听到连接请求后，
+ *         Listener对象会初始化这个连接，之后采用轮询的方式从readers线程池中选出一个Reader线程处理RPC请求的读取操作。
+ *      2. Reader: 用于读取RPC请求。Reader线程类中存在一个Selector对象readSelector，类似于Reactor模式中的readReactor，这个对象用于监听网络中
+ *         是否有可以读取的RPC请求。当readSelector监听到有可读的RPC请求后，会唤醒Reader线程读取这个请求，并将请求封装在一个Call对象中，然后将这
+ *         个Call对象放入共享队列CallQueue中。
+ *      3. Handler：用于处理RPC请求并发回响应。Handler对象会从CallQueue中不停地取出RPC请求，然后执行RPC请求对应的本地函数，最后封装响应并将响应
+ *         发回客户端。为了能够并发地处理RPC请求，Server中会存在多个Handler对象。
+ *      4. Response：用于向客户端发送RPC响应，响应很大或者网络条件不佳等情况下，Handler线程很难将完整的响应发回客户端，这就会造成Handler线程阻塞，
+ *         从而影响RPC请求的处理效率。所以Handler在没能够将完整的RPC响应发回客户端时，会在Responder内部的respondSelector上注册一个写响应事件，这
+ *         里的respondSelector与Reactor模式的respondSelector概念相同，当respondSelector监听到网络情况具备写响应的条件时，会通知Responder将剩余
+ *         响应发回客户端。
+ *
  */
 @Public
 @InterfaceStability.Evolving
