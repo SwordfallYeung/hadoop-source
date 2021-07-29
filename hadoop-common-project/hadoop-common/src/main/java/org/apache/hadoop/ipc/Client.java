@@ -82,6 +82,30 @@ import static org.apache.hadoop.ipc.RpcConstants.PING_CALL_ID;
  * a port and is defined by a parameter class and a value class.
  * 
  * @see Server
+ *
+ * todo Client架构图
+ *    ———————————————————————                   ————————————————                 ——————————————
+ *    |      Client         |  1-2.new()        |              | 3.RPCRequest    |            |
+ *    |  —————————————————  |  -------------->  |              | --------------> |            |
+ *    |  | connections   |  |  2.setupIOstreams |  Connection  |                 |   Server   |
+ *    |  | ————————————— |  |  -------------->  |              | 5.RPCResponse   |            |
+ *    |  | |connection1| |  |  3.sendRpcRequest |              | <-------------- |            |
+ *    |  | ————————————— |  |  -------------->  ————————————————                 ——————————————
+ *    |  | ————————————— |  |                          |
+ *    |  | |connection2| |  |                          |
+ *    |  | ————————————— |  |                          | 5.notify()
+ *    |  —————————————————  |                          |
+ *    |                     |                          |
+ *    | ——————————————————— |                         .|.
+ *    | |      calls      | |                    ————————————————
+ *    | | ——————— ——————— | |    1-1.new()       |              |
+ *    | | |call1| |call2| | |  -------------->   |              |
+ *    | | ——————— ——————— | |                    |     Call     |
+ *    | |     ———————     | |    4.wait()        |              |
+ *    | |     |call3|     | |  -------------->   |              |
+ *    | |     ———————     | |                    ————————————————
+ *    | ——————————————————— |
+ *    ———————————————————————
  */
 @Public
 @InterfaceStability.Evolving
