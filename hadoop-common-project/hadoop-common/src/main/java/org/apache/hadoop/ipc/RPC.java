@@ -613,6 +613,8 @@ public class RPC {
    *   a secure client falls back to simple auth
    * @return the proxy
    * @throws IOException if any error occurs
+   *
+   * todo 获取代理对象
    */
    public static <T> ProtocolProxy<T> getProtocolProxy(Class<T> protocol,
                                 long clientVersion,
@@ -627,6 +629,9 @@ public class RPC {
     if (UserGroupInformation.isSecurityEnabled()) {
       SaslRpcServer.init(conf);
     }
+    // todo 先通过getProtocolEngine(protocol, conf)这个方法，获取到RpcEngine，然后调用getProxy获取对应的对象
+    //      这个是getProxy的接口定义，根据RpcEngine的不同，实现方式也不同
+    //      拿到代理对象之后，就可以像本地一样调用里面的方法了。
     return getProtocolEngine(protocol, conf).getProxy(protocol, clientVersion,
         addr, ticket, conf, factory, rpcTimeout, connectionRetryPolicy,
         fallbackToSimpleAuth, null);
@@ -679,6 +684,8 @@ public class RPC {
     * @param conf
     * @return a proxy instance
     * @throws IOException
+    *
+    * todo 获取代理对象
     */
    public static <T> T getProxy(Class<T> protocol,
                                  long clientVersion,
