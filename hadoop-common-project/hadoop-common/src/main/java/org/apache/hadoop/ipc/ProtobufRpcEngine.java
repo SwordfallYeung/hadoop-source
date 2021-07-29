@@ -351,6 +351,7 @@ public class ProtobufRpcEngine implements RpcEngine {
         RpcWritable.Buffer.class);
   }
 
+  // todo ProtobufRpcEngine获取Server
   @Override
   public RPC.Server getServer(Class<?> protocol, Object protocolImpl,
       String bindAddress, int port, int numHandlers, int numReaders,

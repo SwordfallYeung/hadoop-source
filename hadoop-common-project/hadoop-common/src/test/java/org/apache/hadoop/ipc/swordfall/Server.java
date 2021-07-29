@@ -5,6 +5,8 @@ import org.apache.hadoop.ipc.RPC;
 
 /**
  * 启动RPC服务
+ *
+ * todo Server服务是用RPC.Builder类的build()方法进行构建的，下面是构建Server的模拟代码。
  */
 public class Server {
 

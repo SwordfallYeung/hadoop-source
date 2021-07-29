@@ -245,8 +245,12 @@ public class RPC {
   }
 
   // return the RpcEngine configured to handle a protocol
+  // todo 最主要的是getProtocolEngine方法，获取RpcEngine，这个方法加了synchronized关键字，所以是个同步方法。
   static synchronized RpcEngine getProtocolEngine(Class<?> protocol,
       Configuration conf) {
+    // todo 从缓存中获取RpcEngine
+    // todo RpcEngine有三种ProtobufRpcEngine(已过时)、ProtobufRpcEngine2和WritableRpcEngine(已过时)，默认是WritableRpcEngine，下述代码会走默认的WritableRpcEngine
+    // todo ProtobufRpcEngine、ProtobufRpcEngine2和WritableRpcEngine这三个类型都会调用RPC.Server父类的初始化，然后RPC.Server最终调用父类ipc.Server的初始化
     RpcEngine engine = PROTOCOL_ENGINES.get(protocol);
     if (engine == null) {
       Class<?> impl = conf.getClass(ENGINE_PROP+"."+protocol.getName(),
@@ -782,13 +786,23 @@ public class RPC {
 
   /**
    * Class to construct instances of RPC server with specific options.
+   *
+   * todo 其实就是通过RPC.Builder构建一个Server对象
+   *      Builder构建对象中包含构建Server的各种属性，如IP，端口，协议，实现类等等。一个builder只能绑定一个协议和实现类。
+   *      当Builder中的各种属性填充完，满足构建Server的条件之后，就会构建Server对象，并且调用Server的start方法启动Server.
    */
   public static class Builder {
+    // todo 设置协议
     private Class<?> protocol = null;
+    // todo 设置协议的实例
     private Object instance = null;
+    // todo 设置绑定地址
     private String bindAddress = "0.0.0.0";
+    // todo 设置端口
     private int port = 0;
+    // todo 这是处理任务的handler数量
     private int numHandlers = 1;
+    // todo 设置读取任务的reader数量
     private int numReaders = -1;
     private int queueSizePerHandler = -1;
     private boolean verbose = false;
@@ -872,6 +886,9 @@ public class RPC {
      * Build the RPC Server. 
      * @throws IOException on error
      * @throws HadoopIllegalArgumentException when mandatory fields are not set
+     *
+     * todo 最核心的是创建Server服务
+     *      RPC.Server server = builder.build();
      */
     public Server build() throws IOException, HadoopIllegalArgumentException {
       if (this.conf == null) {
@@ -883,7 +900,12 @@ public class RPC {
       if (this.instance == null) {
         throw new HadoopIllegalArgumentException("instance is not set");
       }
-      
+
+      /**
+       * todo 调用getProtocolEngine()获取当前RPC类配置的RpcEngine对象
+       *      在NameNodeRpcServer的构建方法中已经将当前RPC类的RpcEngine对象设置为ProtobufRpcEngine了。
+       *      获取ProtobufRpcEngine对象之后，build()方法会在ProtobufRpcEngine对象上调用getServer()方法获取一个RPC Server对象的引用。
+       */
       return getProtocolEngine(this.protocol, this.conf).getServer(
           this.protocol, this.instance, this.bindAddress, this.port,
           this.numHandlers, this.numReaders, this.queueSizePerHandler,

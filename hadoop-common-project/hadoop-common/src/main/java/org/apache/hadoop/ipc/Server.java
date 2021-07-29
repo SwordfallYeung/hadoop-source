@@ -3432,6 +3432,7 @@ public abstract class Server {
   }
 
   /** Starts the service.  Must be called before any calls will be handled. */
+  // todo ipc.server初始化后，最后调用start()方法，开启server服务
   public synchronized void start() {
     responder.start();
     listener.start();

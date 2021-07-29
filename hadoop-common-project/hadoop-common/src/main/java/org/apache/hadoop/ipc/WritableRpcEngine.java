@@ -321,6 +321,7 @@ public class WritableRpcEngine implements RpcEngine {
   
   /* Construct a server for a protocol implementation instance listening on a
    * port and address. */
+  // todo WritableRpcEngine获取Server
   @Override
   public RPC.Server getServer(Class<?> protocolClass,
                       Object protocolImpl, String bindAddress, int port,
