@@ -45,6 +45,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** An RpcEngine implementation for Writable data. */
+// todo WritableRpcEngine是Hadoop RPC默认的实现。在3.2.1版本已经被标识为@Deprecated【弃用】，
+//    所以个人觉得精力应该放到ProtobufRpcEngine2上面会更合适一点。
 @InterfaceStability.Evolving
 @Deprecated
 public class WritableRpcEngine implements RpcEngine {
