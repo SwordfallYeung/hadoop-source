@@ -136,6 +136,11 @@ import org.slf4j.LoggerFactory;
  * 
  * @see Client
  *
+ * todo Server的架构：Server端采用Reactor架构
+ *       Listener负责监听服务，当有请求进来，会在reader pool中获取一个Reader读取请求。
+ *       Reader读取Client的请求，将读取的数据Call放到队列callQueue中【CallQueueManager】；
+ *       Handler读取callQueue中的数据进行处理，将处理的结果交由Responseer处理
+ *
  * todo Server架构图
  *         Clients                                               Server
  *    ————————————————           ——————————————————————————————————————————————————————————————————————
@@ -175,6 +180,49 @@ import org.slf4j.LoggerFactory;
  *         里的respondSelector与Reactor模式的respondSelector概念相同，当respondSelector监听到网络情况具备写响应的条件时，会通知Responder将剩余
  *         响应发回客户端。
  *
+ * todo Server处理流程解读如下：
+ *      1. 整个Server只有一个Listener线程，Listener对象中的Selector对象acceptorSelector负责监听来自客户端的Socket连接请求。acceptorSelector在
+ *          ServerSocketChannel上注册OP_ACCEPT事件，等待客户端Client.call()中的getConnection触发该事件唤醒Listener线程，创建新的SocketChannel
+ *          并创建readers线程池；Listener会在reader线程池中选取一个线程，并在Reader的readerSelector上注册OP_READ事件；
+ *      2. readerSelector监听OP_READ事件，当客户端发送RPC请求，触发readerSelector唤醒Reader线程；Reader线程从SocketChannel中读取数据封装成Call
+ *         对象，然后放入共享队列callQueue；
+ *      3. 最初，handlers线程池都在callQueue上阻塞（BlockingQueue.take()），当有Call对象加入，其中一个Handler线程被唤醒。根据Call对象上的信息，调用
+ *         Server.call()方法（类似Client.call()），反序列化并执行RPC请求对应的本地函数，最后将响应返回写入SocketChannel。
+ *      4. Responder线程起着缓冲作用。当有大量响应或网络不佳时，Handler不能将完整的响应返回客户端，会在Responder的respondSelector上注册OP_WRITE事件，
+ *         当监听到写条件时，会唤醒Responder返回响应。
+ *
+ * todo ProtobufRpcEngine2是现有Hadoop RpcEngine里面的默认使用方式，现阶段Hadoop所有通讯99.99%都是通过proto协议实现的。ProtobufRpcEngine和
+ *      WritableRpcEngine这两个方式在Hadoop3.3.1版本已经被标识为【弃用】
+ *
+ * todo RPC是帮助我们屏蔽网络编程细节，实现调用远程方法就跟调用本地（同一个项目中的方法）一样的体验，我们不需要因为这个方法是远程调用就需要编写很多与
+ *      业务无光的代码。
+ *
+ * todo 示例：
+ *         //1. 构建配置对象
+ *         Configuration conf = new Configuration();
+ *         //2. 协议对象的实例
+ *         MetaInfoServer serverImpl =  new MetaInfoServer();
+ *         BlockingService blockingService = CustomProtos.MetaInfo.newReflectiveBlockingService(serverImpl);
+ *         //3. 设置协议的RpcEngine为ProtobufRpcEngine .
+ *         RPC.setProtocolEngine(conf, MetaInfoProtocol.class, ProtobufRpcEngine.class);
+ *         //4. 构建RPC框架
+ *         RPC.Builder builder = new RPC.Builder(conf);
+ *         //5. 绑定地址
+ *         builder.setBindAddress("localhost");
+ *         //6. 绑定端口
+ *         builder.setPort(7777);
+ *         //7. 绑定协议
+ *         builder.setProtocol(MetaInfoProtocol.class);
+ *         //8. 调用协议实现类
+ *         builder.setInstance(blockingService);
+ *         //9. 创建服务
+ *         RPC.Server server = builder.build();
+ *         //10. 启动服务
+ *         server.start();
+ *   上述代码，主要是分三部分：
+ *   1.定义接口&实现；
+ *   2.设置服务的参数，如：协议使用的RpcEngine类型，Server发布的IP，端口。绑定协议&协议的实现对象
+ *   3.根据第二条中设置的RpcEngine的参数，构建RpcEngine并启动服务。
  */
 @Public
 @InterfaceStability.Evolving

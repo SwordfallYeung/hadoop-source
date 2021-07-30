@@ -249,12 +249,15 @@ public class RPC {
   static synchronized RpcEngine getProtocolEngine(Class<?> protocol,
       Configuration conf) {
     // todo 从缓存中获取RpcEngine
+    // todo 这个是提前设置的，通过RPC.setProtocolEngine(conf, MetaInfoProtocol.class,ProtobufRpcEngine.class);
     // todo RpcEngine有三种ProtobufRpcEngine(已过时)、ProtobufRpcEngine2和WritableRpcEngine(已过时)，默认是WritableRpcEngine，下述代码会走默认的WritableRpcEngine
     // todo ProtobufRpcEngine、ProtobufRpcEngine2和WritableRpcEngine这三个类型都会调用RPC.Server父类的初始化，然后RPC.Server最终调用父类ipc.Server的初始化
     RpcEngine engine = PROTOCOL_ENGINES.get(protocol);
     if (engine == null) {
+      // todo 通过这里，获取RpcEngine的实现类，这里我们获取的是 ProtobufRpcEngine2.class
       Class<?> impl = conf.getClass(ENGINE_PROP+"."+protocol.getName(),
                                     WritableRpcEngine.class);
+      // todo impl: org.apache.hadoop.ipc.ProtobufRpcEngine2
       engine = (RpcEngine)ReflectionUtils.newInstance(impl, conf);
       PROTOCOL_ENGINES.put(protocol, engine);
     }
@@ -896,6 +899,8 @@ public class RPC {
      *
      * todo 最核心的是创建Server服务
      *      RPC.Server server = builder.build();
+     *      在这里，主要的是有两个方法，一个是getProtocolEngine，另一个是getServer
+     *      逻辑顺序是先获取对应协议的RpcEngine，然后再用RpcEngine创建一个Server服务。
      */
     public Server build() throws IOException, HadoopIllegalArgumentException {
       if (this.conf == null) {
@@ -1115,7 +1120,7 @@ public class RPC {
      }
      return new VerProtocolImpl(highestVersion,  highest);   
    }
-  
+   
     protected Server(String bindAddress, int port, 
                      Class<? extends Writable> paramClass, int handlerCount,
                      int numReaders, int queueSizePerHandler,

@@ -371,8 +371,27 @@ public class ProtobufRpcEngine2 implements RpcEngine {
         RpcWritable.Buffer.class);
   }
 
-
-  // todo ProtobufRpcEngine获取Server
+  /**
+   * todo 在获取到ProtobufRpcEngine2之后，调用其getServer方法，获取Server实例
+   *       ProtobufRpcEngine2中的Server二级父类是RPC.Server，一级父类是ipc.Server
+   *
+   * todo 在整个流程中getServer会调用new Server的构造方法创建Server服务
+   * @param protocol protocol协议的类
+   * @param protocolImpl protocol实现类
+   * @param bindAddress Server绑定的ip地址
+   * @param port Server绑定的端口
+   * @param numHandlers handler的线程数量，默认值1
+   * @param numReaders the number of reader threads to run
+   * @param queueSizePerHandler the size of the queue per hander thread
+   * @param verbose 是否每一个请求，都需要打印日志
+   * @param conf 配置文件
+   * @param secretManager The secret manager to use to validate incoming requests.
+   * @param portRangeConfig A config parameter that can be used to restrict
+   *        the range of ports used when port is 0 (an ephemeral port)
+   * @param alignmentContext provides server state info on client responses
+   * @return
+   * @throws IOException
+   */
   @Override
   public RPC.Server getServer(Class<?> protocol, Object protocolImpl,
       String bindAddress, int port, int numHandlers, int numReaders,
@@ -466,6 +485,8 @@ public class ProtobufRpcEngine2 implements RpcEngine {
      * @param portRangeConfig A config parameter that can be used to restrict
      * the range of ports used when port is 0 (an ephemeral port)
      * @param alignmentContext provides server state info on client responses
+     *
+     * todo 在Server的构建方法中，首先会调用父类的构建方法，然后再调用registerProtocolAndImpl方法注册接口类和接口的实现类
      */
     public Server(Class<?> protocolClass, Object protocolImpl,
         Configuration conf, String bindAddress, int port, int numHandlers,
@@ -479,6 +500,8 @@ public class ProtobufRpcEngine2 implements RpcEngine {
           portRangeConfig);
       setAlignmentContext(alignmentContext);
       this.verbose = verbose;
+      // todo 调用registerProtocolAndImpl()方法
+      //       注册接口类protocolClass和实现类protocolImpl的映射关系
       registerProtocolAndImpl(RPC.RpcKind.RPC_PROTOCOL_BUFFER, protocolClass,
           protocolImpl);
     }
