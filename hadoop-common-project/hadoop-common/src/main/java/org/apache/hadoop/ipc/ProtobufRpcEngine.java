@@ -57,6 +57,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * RPC Engine for for protobuf based RPCs.
  * This engine uses Protobuf 2.5.0. Recommended to upgrade to Protobuf 3.x
  * from hadoop-thirdparty and use ProtobufRpcEngine2.
+ *
+ * todo ProtobufRpcEngine目前是作为Hadoop RPC引擎唯一的实现方式。WritableRpcEngine在3.2.1版本已经被废弃，
+ *      但依旧是默认实现的RPC引擎。ProtobufRpcEngine2过程比WriteRpcEngine的使用要麻烦很多，主要是在接口的定义
+ *      和实现的手法上有区别
  */
 @Deprecated
 @InterfaceStability.Evolving

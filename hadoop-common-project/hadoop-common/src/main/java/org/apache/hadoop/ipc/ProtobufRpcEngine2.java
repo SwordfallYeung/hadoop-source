@@ -55,6 +55,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * RPC Engine for for protobuf based RPCs.
+ *
+ * todo ProtobufRpcEngine目前是作为Hadoop RPC引擎唯一的实现方式。WritableRpcEngine在3.2.1版本已经被废弃，
+ *      但依旧是默认实现的RPC引擎。ProtobufRpcEngine2过程比WriteRpcEngine的使用要麻烦很多，主要是在接口的定义
+ *      和实现的手法上有区别
+ *
+ * todo 用法：
+ *      1. 定义proto协议：根据Protocol的语法，定义一个服务MetaInfo，通过该服务的getMetaInfo接口，可以获取到元数据的信息。
+ *      2. 根据定义好的proto协议生成java类，导入项目：将定义好的协议保存成文件，命名为CustomProtocol.proto。在该文件的目录下执行命令。
+ *         这是在该目录下，会有一个文件目录生成，层级为我们定义好的org.apache.hadoop.rpc.protobuf路径。将里面生成的java文件CustomProtos.java
+ *         导入到项目中，存放路径与定义好的路径一样。
+ *      3. 创建一个接口，集成生成Java类中的CustomProtos.MetaInfo.BlockingInterface接口。
+ *      4. 创建一个类，实现刚刚定义好的MetaInfoProtocol接口，并且实现里面的方法，这个需要自己去写代码逻辑。
  */
 @InterfaceStability.Evolving
 public class ProtobufRpcEngine2 implements RpcEngine {
