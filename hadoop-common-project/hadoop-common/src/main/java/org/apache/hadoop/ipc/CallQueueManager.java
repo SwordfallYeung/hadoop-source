@@ -39,6 +39,13 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Abstracts queue operations for different blocking queues.
+ *
+ * todo 这里默认就当成一个普通的阻塞队列就行了，如果你不配置scheduler的话，默认的调度策略就是DefaultRpcScheduler，
+ *      DefaultRpcScheduler就是一个摆设，啥也干不了，使用的是调度队列里的FIFO策略。
+ *      如果配置了其他的策略的话,需要自行去看一下对应的策略.比如: DecayRpcScheduler。
+ *      默认调度策略是FIFO, 虽然FIFO在先到先服务的情况下足够公平，但如果用户执行的I/O操作较多，相比I/O操作较少的用户，
+ *      将获得更多的服务。在这种情况下，FIFO有失公平并且会导致延迟增加。
+ *      FairCallQueue 队列会根据调用者的调用规模将传入的RPC调用分配至多个队列中。调度模块会跟踪最新的调用，并为调用量较小的用户分配更高的优先级。
  */
 public class CallQueueManager<E extends Schedulable>
     extends AbstractQueue<E> implements BlockingQueue<E> {

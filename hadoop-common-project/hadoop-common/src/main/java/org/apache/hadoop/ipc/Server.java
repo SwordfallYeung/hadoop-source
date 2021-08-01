@@ -1286,14 +1286,24 @@ public abstract class Server {
   }
 
   /** Listens on the socket. Creates jobs for the handler threads*/
+  // todo Listener是一个线程类，整个Server中只会有一个Listener线程，用于监听来自客户端的Sokcet连接请求。
+  //      对于每一个新到达的Socket连接请求，Listener都会从readers线程池中选择一个Reader线程来处理。
+  // todo Listener对象中存在一个Selector对象acceptSelector，负责监听来自客户端的Socket连接请求。
+  //      当acceptSelector监听到连接请求后，Listener对象会初始化这个连接，之后采用轮询的方式从readers线程
+  //      池中选出一个Reader线程处理RPC请求的读取操作。
   private class Listener extends Thread {
-    
+    // todo 接收服务的channel 这是一个无阻塞的socket服务。
     private ServerSocketChannel acceptChannel = null; //the accept channel
+    // todo 注册一个Selector用于服务的监控
     private Selector selector = null; //the selector that we use for the server
+    // todo 注册Reader服务的缓冲池，用于读取client的服务
     private Reader[] readers = null;
     private int currentReader = 0;
+    // todo Socket地址的实体对象
     private InetSocketAddress address; //the address we bind at
+    // todo 监听的端口
     private int listenPort; //the port we bind at
+    // todo 服务监听队列的长度，默认128
     private int backlogLength = conf.getInt(
         CommonConfigurationKeysPublic.IPC_SERVER_LISTEN_QUEUE_SIZE_KEY,
         CommonConfigurationKeysPublic.IPC_SERVER_LISTEN_QUEUE_SIZE_DEFAULT);
@@ -1302,21 +1312,30 @@ public abstract class Server {
         CommonConfigurationKeysPublic.IPC_SERVER_REUSEADDR_DEFAULT);
     private boolean isOnAuxiliaryPort;
 
+    // todo 1. 初始化Listener，根据ip、端口创建一个无阻塞的socket并绑定SelectionKey.OP_ACCEPT事件到Selector上。
+    //      2. 根据readThreads的数量，构建Reader。
     Listener(int port) throws IOException {
+      // todo 创建InetSocketAddress实例
       address = new InetSocketAddress(bindAddress, port);
       // Create a new server socket and set to non blocking mode
+      // todo 创建一个无阻塞的socket服务
       acceptChannel = ServerSocketChannel.open();
       acceptChannel.configureBlocking(false);
       acceptChannel.setOption(StandardSocketOptions.SO_REUSEADDR, reuseAddr);
 
       // Bind the server socket to the local host and port
+      // todo 绑定服务和端口
       bind(acceptChannel.socket(), address, backlogLength, conf, portRangeConfig);
       //Could be an ephemeral port
+      // todo 可能是一个临时端口
       this.listenPort = acceptChannel.socket().getLocalPort();
+      // todo 设置当前线程的名字
       Thread.currentThread().setName("Listener at " +
           bindAddress + "/" + this.listenPort);
       // create a selector;
+      // todo 创建一个selector
       selector= Selector.open();
+      // todo 创建Reader
       readers = new Reader[readThreads];
       for (int i = 0; i < readThreads; i++) {
         Reader reader = new Reader(
@@ -1326,8 +1345,11 @@ public abstract class Server {
       }
 
       // Register accepts on the server socket with the selector.
+      // todo 注册SelectionKey.OP_ACCEPT事件到selector
       acceptChannel.register(selector, SelectionKey.OP_ACCEPT);
+      // todo 设置线程名字
       this.setName("IPC Server listener on " + port);
+      // todo 设置守护模式
       this.setDaemon(true);
       this.isOnAuxiliaryPort = false;
     }
@@ -1335,23 +1357,38 @@ public abstract class Server {
     void setIsAuxiliary() {
       this.isOnAuxiliaryPort = true;
     }
-    
+
+    /**
+     * todo Reader也是一个线程类，每个Reader线程都会负责读取若干个客户端连接发来的RPC的请求。而在Server类中会存在
+     *      多个Reader线程构成一个readers线程池，readers线程池并发地读取RPC请求，提高了Server处理RPC请求的速率。
+     *      Reader类定义了自己的readSelector字段，用于监听SelectionKey.OP_READ事件。Reader类还定义了adding
+     *      字段标识是否有任务正在添加到Reader线程。
+     *
+     * todo Reader是在Listener构造方法里面创建。Reader继承Thread类，是一个线程方法
+     */
     private class Reader extends Thread {
+      // todo 队列
       final private BlockingQueue<Connection> pendingConnections;
+      // todo Selector 用于注册 channel
       private final Selector readSelector;
 
+      // todo 构造方法
       Reader(String name) throws IOException {
+        // todo 设置线程名字
         super(name);
 
+        // todo reader的队列长度，默认100
         this.pendingConnections =
             new LinkedBlockingQueue<Connection>(readerPendingConnectionQueue);
         this.readSelector = Selector.open();
       }
-      
+
+      // todo 就是调用doRunLoop方法
       @Override
       public void run() {
         LOG.info("Starting " + Thread.currentThread().getName());
         try {
+          // todo Reader ...进行轮询操作...
           doRunLoop();
         } finally {
           try {
@@ -1362,6 +1399,15 @@ public abstract class Server {
         }
       }
 
+      /**
+       * todo Reader线程的主循环则是在doRunLoop()方法中实现的，doRunLoop()方法会监听当前Reader对象负责的所有客户端
+       *      连接中是否有新的RPC请求到达，如果有则读取这些请求，然后将成功读取的请求用一个Call对象封装，最后放入callQueue
+       *      中等待Handler线程处理。
+       *
+       * todo 主要有两个步骤：
+       *      1. 从队列pendingConnections中接入连接，注册SelectionKey.OP_READ事件到Selector
+       *      2. 有可读事件时，调用doRead()方法处理
+       */
       private synchronized void doRunLoop() {
         while (running) {
           SelectionKey key = null;
@@ -1373,14 +1419,17 @@ public abstract class Server {
               Connection conn = pendingConnections.take();
               conn.channel.register(readSelector, SelectionKey.OP_READ, conn);
             }
+            // todo 等待请求接入
             readSelector.select();
 
+            // todo 在当前的readSelector上等待可读事件，也就是有客户端RPC请求到达
             Iterator<SelectionKey> iter = readSelector.selectedKeys().iterator();
             while (iter.hasNext()) {
               key = iter.next();
               iter.remove();
               try {
                 if (key.isReadable()) {
+                  // todo 有可读事件时，调用doRead()方法处理
                   doRead(key);
                 }
               } catch (CancelledKeyException cke) {
@@ -1427,15 +1476,23 @@ public abstract class Server {
       }
     }
 
+    /**
+     * todo Listener类中定义了一个Selector对象，负责监听SelectionKey.OP_ACCEPT事件，
+     *      Listener线程的run()方法会循环判断是否监听到了OP_ACCEPT事件，也就是是否有新的
+     *      Socket连接请求到达，如果有则调用doAccept()方法响应。
+     */
     @Override
     public void run() {
       LOG.info(Thread.currentThread().getName() + ": starting");
       SERVER.set(Server.this);
+      // todo 创建线程，定时扫描connection，关闭超时，无效的连接
       connectionManager.startIdleScan();
       while (running) {
         SelectionKey key = null;
         try {
+          // todo 如果没有请求进来的话，会阻塞
           getSelector().select();
+          // todo 循环判断是否有新的连接建立请求
           Iterator<SelectionKey> iter = getSelector().selectedKeys().iterator();
           while (iter.hasNext()) {
             key = iter.next();
@@ -1443,6 +1500,7 @@ public abstract class Server {
             try {
               if (key.isValid()) {
                 if (key.isAcceptable())
+                  // todo 如果有，则调用doAccept()方法响应
                   doAccept(key);
               }
             } catch (IOException e) {
@@ -1453,16 +1511,20 @@ public abstract class Server {
           // we can run out of memory if we have too many threads
           // log the event and sleep for a minute and give 
           // some thread(s) a chance to finish
+          // todo 这里可能出现内存溢出的情况，要特别注意
+          //      如果内存溢出了，会关闭当前连接，休眠60秒
           LOG.warn("Out of Memory in server select", e);
           closeCurrentConnection(key, e);
           connectionManager.closeIdle(true);
           try { Thread.sleep(60000); } catch (Exception ie) {}
         } catch (Exception e) {
+          // todo 捕获到其他异常，也关闭当前连接
           closeCurrentConnection(key, e);
         }
       }
       LOG.info("Stopping " + Thread.currentThread().getName());
 
+      // 关闭请求，停止所有服务
       synchronized (this) {
         try {
           acceptChannel.close();
@@ -1491,8 +1553,17 @@ public abstract class Server {
     InetSocketAddress getAddress() {
       return (InetSocketAddress)acceptChannel.socket().getLocalSocketAddress();
     }
-    
+
+    /**
+     * todo doAccept()方法会接收来自客户端的Socket连接请求并初始化Socket连接。之后doAccept()方法会从readers线程池中
+     *      选出一个Reader线程读取来自这个客户端的RPC请求。每个Reader线程都会有一个自己的readSelector，用于监听是否有
+     *      新的RPC请求到达。
+     *      所以doAccept()方法在建立连接并选出Reader对象后，会在这个Reader对象的readSelector上注册OP_READ事件。
+     *      doAccept()方法会通过SelectionKey将新构造的Connection对象传给Reader，Connection类封装了Server与Client
+     *      之间的Socket连接。这样Reader线程在被唤醒时就可以通过Connection对象读取RPC请求了。
+     */
     void doAccept(SelectionKey key) throws InterruptedException, IOException,  OutOfMemoryError {
+      // todo 接收请求，建立连接
       ServerSocketChannel server = (ServerSocketChannel) key.channel();
       SocketChannel channel;
       while ((channel = server.accept()) != null) {
@@ -1500,11 +1571,14 @@ public abstract class Server {
         channel.configureBlocking(false);
         channel.socket().setTcpNoDelay(tcpNoDelay);
         channel.socket().setKeepAlive(true);
-        
+
+        // todo 获取reader，通过%取余的方式获取reader
         Reader reader = getReader();
+        // todo 构造connection对象，添加到readKey的附件传递给Reader对象
         Connection c = connectionManager.register(channel,
             this.listenPort, this.isOnAuxiliaryPort);
         // If the connectionManager can't take it, close the connection.
+        // 如果connectionManager获取不到Connection，关闭当前连接
         if (c == null) {
           if (channel.isOpen()) {
             IOUtils.cleanupWithLogger(LOG, channel);
@@ -1513,12 +1587,28 @@ public abstract class Server {
           continue;
         }
         key.attach(c);  // so closeCurrentConnection can get the object
+        // reader增加连接，处理connection里面的数据
         reader.addConnection(c);
       }
     }
 
+    /**
+     * todo 当有数据到达Selector的SelectionKey.OP_READ的时候，会通过key.attachment()方法获取的SelectionKey key值
+     *      上绑定的Connection对象。然后调用c.readAndProcess()读取数据，同时会更新connection上的lastContact时间戳。
+     *      当c.readAndProcess()的返回值count小于0或者connection的shouldClose()方法返回值true时，才会关闭connection。
+     *
+     * todo doRead()方法负责读取RPC请求，
+     *      虽然readSelector监听到了RPC请求的可读事件，
+     *      但是doRead()方法此时并不知道这个RPC请求是由哪个客户端发送来的，
+     *      所以doRead()方法首先会调用SelectionKey.attachment() 方法获取 Listener 对象构造的 Connection 对象，
+     *      Connection对象中封装了Server与Client之间的网络连接，之后doRead()方法只需调用
+     *      Connection.readAndProcess()方法就可以读取RPC请求了，这里的设计非常的巧妙。
+     */
     void doRead(SelectionKey key) throws InterruptedException {
       int count;
+
+      // todo 通过SelectionKey获取Connection对象
+      //      (Connection对象是Listener#run方法中的doAccept方法中绑定的key.attach(c))
       Connection c = (Connection)key.attachment();
       if (c == null) {
         return;  
@@ -1526,6 +1616,7 @@ public abstract class Server {
       c.setLastContact(Time.now());
       
       try {
+        // todo 调用Connection.readAndProcess处理读取请求
         count = c.readAndProcess();
       } catch (InterruptedException ieo) {
         LOG.info(Thread.currentThread().getName() + ": readAndProcess caught InterruptedException", ieo);
@@ -3146,6 +3237,8 @@ public abstract class Server {
    *  Class, RPC.RpcInvoker)}
    * This parameter has been retained for compatibility with existing tests
    * and usage.
+   *
+   * todo 这里才是Server端的真正构建过程
    */
   @SuppressWarnings("unchecked")
   protected Server(String bindAddress, int port,
@@ -3154,27 +3247,42 @@ public abstract class Server {
       String serverName, SecretManager<? extends TokenIdentifier> secretManager,
       String portRangeConfig)
     throws IOException {
+    // todo 绑定IP地址，必填
     this.bindAddress = bindAddress;
+    // todo 绑定配置文件
     this.conf = conf;
     this.portRangeConfig = portRangeConfig;
+    // todo 绑定端口必填
     this.port = port;
-    this.rpcRequestClass = rpcRequestClass; 
+    // todo 这个值应该是为null
+    this.rpcRequestClass = rpcRequestClass;
+    // handlerCount的线程数量
     this.handlerCount = handlerCount;
     this.socketSendBufferSize = 0;
+    // todo 服务名
     this.serverName = serverName;
     this.auxiliaryListenerMap = null;
+
+    // todo server接收的最大数据长度
+    //  ipc.maximum.data.length  默认 :  64 * 1024 * 1024    ===>  64 MB
     this.maxDataLength = conf.getInt(CommonConfigurationKeys.IPC_MAXIMUM_DATA_LENGTH,
         CommonConfigurationKeys.IPC_MAXIMUM_DATA_LENGTH_DEFAULT);
+
+    // todo handler队列的最大数量默认值为-1，即默认最大容量为handler线程的数量*每个handler线程队列的数量= 1 * 100 = 100
     if (queueSizePerHandler != -1) {
+      // todo 最大队列长度：如果默认值不是为handler线程的数量 * 每个handler线程队列的数量
       this.maxQueueSize = handlerCount * queueSizePerHandler;
     } else {
+      // todo最大队列长度：如果设置为-1的话，默认值handler队列值为100，所以最大队列长度为：handler线程数量 * 100
       this.maxQueueSize = handlerCount * conf.getInt(
           CommonConfigurationKeys.IPC_SERVER_HANDLER_QUEUE_SIZE_KEY,
           CommonConfigurationKeys.IPC_SERVER_HANDLER_QUEUE_SIZE_DEFAULT);      
     }
+    // todo 返回值的大小如果超过1024*1024=1M，将会有告警【WARN】级别的日志输出
     this.maxRespSize = conf.getInt(
         CommonConfigurationKeys.IPC_SERVER_RPC_MAX_RESPONSE_SIZE_KEY,
         CommonConfigurationKeys.IPC_SERVER_RPC_MAX_RESPONSE_SIZE_DEFAULT);
+    // todo 设置readThread的线程数量，默认1
     if (numReaders != -1) {
       this.readThreads = numReaders;
     } else {
@@ -3182,16 +3290,20 @@ public abstract class Server {
           CommonConfigurationKeys.IPC_SERVER_RPC_READ_THREADS_KEY,
           CommonConfigurationKeys.IPC_SERVER_RPC_READ_THREADS_DEFAULT);
     }
+    // todo 设置reader的队列长度，默认100
     this.readerPendingConnectionQueue = conf.getInt(
         CommonConfigurationKeys.IPC_SERVER_RPC_READ_CONNECTION_QUEUE_SIZE_KEY,
         CommonConfigurationKeys.IPC_SERVER_RPC_READ_CONNECTION_QUEUE_SIZE_DEFAULT);
 
     // Setup appropriate callqueue
     final String prefix = getQueueClassPrefix();
+    // todo CallQueue reader读取client端的数据之后，放到这个队列里面，等到handler进行处理
+    //    队列：LinkedBlockingQueue<Call> 格式，调度器默认：DefaultRpcScheduler
     this.callQueue = new CallQueueManager<Call>(getQueueClass(prefix, conf),
         getSchedulerClass(prefix, conf),
         getClientBackoffEnable(prefix, conf), maxQueueSize, prefix, conf);
 
+    // todo 安全相关
     this.secretManager = (SecretManager<TokenIdentifier>) secretManager;
     this.authorize = 
       conf.getBoolean(CommonConfigurationKeys.HADOOP_SECURITY_AUTHORIZATION, 
@@ -3202,28 +3314,35 @@ public abstract class Server {
     this.negotiateResponse = buildNegotiateResponse(enabledAuthMethods);
     
     // Start the listener here and let it bind to the port
+    // todo 创建Listener，绑定监听的端口，所有client端发送的请求，都是通过这里进行转发
     listener = new Listener(port);
     // set the server port to the default listener port.
     this.port = listener.getAddress().getPort();
     connectionManager = new ConnectionManager();
     this.rpcMetrics = RpcMetrics.create(this, conf);
     this.rpcDetailedMetrics = RpcDetailedMetrics.create(this.port);
+
+    // todo 打开/关闭服务器上TCP套接字连接的Nagle算法 默认值 true
+    //    如果设置为true，则禁用该算法，并可能会降低延迟，同时会导致更多/更小数据包的开销
     this.tcpNoDelay = conf.getBoolean(
         CommonConfigurationKeysPublic.IPC_SERVER_TCPNODELAY_KEY,
         CommonConfigurationKeysPublic.IPC_SERVER_TCPNODELAY_DEFAULT);
 
+    // todo 如果当前的rpc服务比其他的rpc服务要慢的话，记录日志，默认false
     this.setLogSlowRPC(conf.getBoolean(
         CommonConfigurationKeysPublic.IPC_SERVER_LOG_SLOW_RPC,
         CommonConfigurationKeysPublic.IPC_SERVER_LOG_SLOW_RPC_DEFAULT));
 
     // Create the responder here
+    // todo 创建响应服务
     responder = new Responder();
     
     if (secretManager != null || UserGroupInformation.isSecurityEnabled()) {
       SaslRpcServer.init(conf);
       saslPropsResolver = SaslPropertiesResolver.getInstance(conf);
     }
-    
+
+    // todo 设置standbyException异常处理
     this.exceptionsHandler.addTerseLoggingExceptions(StandbyException.class);
     this.exceptionsHandler.addTerseLoggingExceptions(
         HealthCheckFailedException.class);
@@ -3480,9 +3599,11 @@ public abstract class Server {
   }
 
   /** Starts the service.  Must be called before any calls will be handled. */
-  // todo ipc.server初始化后，最后调用start()方法，开启server服务
+  // todo ipc.server构造函数初始化后，最后调用start()方法，开启server服务
+  //   关键组件：Listener，Reader，callQueue，Handler，ConnectionManager，Responder
   public synchronized void start() {
     responder.start();
+    // todo Listener是一个线程类，整个Server中只会有一个Listener线程，用于监听来自客户端的Socket连接请求。
     listener.start();
     if (auxiliaryListenerMap != null && auxiliaryListenerMap.size() > 0) {
       for (Listener newListener : auxiliaryListenerMap.values()) {

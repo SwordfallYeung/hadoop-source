@@ -1120,15 +1120,19 @@ public class RPC {
      }
      return new VerProtocolImpl(highestVersion,  highest);   
    }
-   
+
+    //todo 这里一共分两步，一个当前Server继续调用父类【org.apache.hadoop.ipc.Server】构造方法，
+    //      另一个继续注册元数据的通讯协议&实现类。这里我们只看父类【org.apache.hadoop.ipc.Server】构造方法。
     protected Server(String bindAddress, int port, 
                      Class<? extends Writable> paramClass, int handlerCount,
                      int numReaders, int queueSizePerHandler,
                      Configuration conf, String serverName, 
                      SecretManager<? extends TokenIdentifier> secretManager,
                      String portRangeConfig) throws IOException {
+     // todo 调用父类ipc.Server，进行Server的初始化操作
       super(bindAddress, port, paramClass, handlerCount, numReaders, queueSizePerHandler,
             conf, serverName, secretManager, portRangeConfig);
+      //todo 在这里设置meta data的通讯协议，已经处理的RpcEngine
       initProtocolMetaInfo(conf);
     }
     

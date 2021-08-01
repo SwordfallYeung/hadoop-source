@@ -486,7 +486,7 @@ public class ProtobufRpcEngine2 implements RpcEngine {
      * the range of ports used when port is 0 (an ephemeral port)
      * @param alignmentContext provides server state info on client responses
      *
-     * todo 在Server的构建方法中，首先会调用父类的构建方法，然后再调用registerProtocolAndImpl方法注册接口类和接口的实现类
+     * todo 在Server的构建方法中，首先会调用父类RPC.Server的构建方法，然后再调用registerProtocolAndImpl方法注册接口类和接口的实现类
      */
     public Server(Class<?> protocolClass, Object protocolImpl,
         Configuration conf, String bindAddress, int port, int numHandlers,
