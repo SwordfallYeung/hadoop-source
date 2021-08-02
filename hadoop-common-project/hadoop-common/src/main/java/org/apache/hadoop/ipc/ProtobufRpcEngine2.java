@@ -558,11 +558,19 @@ public class ProtobufRpcEngine2 implements RpcEngine {
        * <li> Other exceptions thrown by the service. They are returned as
        * it is.</li>
        * </ol>
+       *
+       * todo call()方法首先会从请求头中提取出RPC调用的接口名和方法名等信息，
+       *      然后根据调用的接口信息获取对应的BlockingService对象，
+       *      再根据调用的方法信息在BlockingService对象上调用callBlockingMethod()方法
+       *      并将调用前转到ClientNamenodeProtocolServerSideTranslatorPB对象上
+       *      最终这个请求会由 NameNodeRpcServer响应。
        */
       public Writable call(RPC.Server server, String connectionProtocolName,
           Writable writableRequest, long receiveTime) throws Exception {
+        // todo 获取rpc调用头
         RpcProtobufRequest request = (RpcProtobufRequest) writableRequest;
         RequestHeaderProto rpcRequest = request.getRequestHeader();
+        // todo 获得调用的接口名、方法名、版本号
         String methodName = rpcRequest.getMethodName();
 
         /**
@@ -597,6 +605,7 @@ public class ProtobufRpcEngine2 implements RpcEngine {
               ", method=" + methodName);
         }
 
+        // todo 获得该接口在Server侧对应的实现类
         ProtoClassProtoImpl protocolImpl = getProtocolImpl(server,
                               declaringClassProtoName, clientVersion);
         if (protocolImpl.isShadedPBImpl()) {
@@ -615,6 +624,7 @@ public class ProtobufRpcEngine2 implements RpcEngine {
           String methodName, ProtoClassProtoImpl protocolImpl)
           throws Exception {
         BlockingService service = (BlockingService) protocolImpl.protocolImpl;
+        //todo 获取要调用的方法的描述信息
         MethodDescriptor methodDescriptor = service.getDescriptorForType()
             .findMethodByName(methodName);
         if (methodDescriptor == null) {
@@ -623,6 +633,7 @@ public class ProtobufRpcEngine2 implements RpcEngine {
           LOG.warn(msg);
           throw new RpcNoSuchMethodException(msg);
         }
+        // todo 获取调用的方法描述符以及调用参数
         Message prototype = service.getRequestPrototype(methodDescriptor);
         Message param = request.getValue(prototype);
 
@@ -632,6 +643,7 @@ public class ProtobufRpcEngine2 implements RpcEngine {
           server.rpcDetailedMetrics.init(protocolImpl.protocolClass);
           CURRENT_CALL_INFO.set(new CallInfo(server, methodName));
           currentCall.setDetailedMetricsName(methodName);
+          // todo 在实现类上调用callBlockingMethod方法，级联适配调用到NameNodeRpcServer
           result = service.callBlockingMethod(methodDescriptor, null, param);
           // Check if this needs to be a deferred response,
           // by checking the ThreadLocal callback being set

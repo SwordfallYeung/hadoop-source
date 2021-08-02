@@ -68,14 +68,23 @@ public class CallQueueManager<E extends Schedulable>
     return (Class<? extends RpcScheduler>)schedulerClass;
   }
 
+  /**
+   * todo 启用Backoff配置参数
+   *      当前，如果应用程序中包含较多的用户调用，假设没有达到操作系统的连接限制，则RPC请求将处于阻塞状态。
+   *      或者，当RPC或NameNode在重负载时，可以基于某些策略将一些明确定义的异常拋回给客户端，
+   *      客户端将理解这种异常并进行指数回退，以此作为类RetryInvocationHandler的另一实现
+   */
   private volatile boolean clientBackOffEnabled;
   private boolean serverFailOverEnabled;
 
   // Atomic refs point to active callQueue
   // We have two so we can better control swapping
+  // todo 存放队列引用
   private final AtomicReference<BlockingQueue<E>> putRef;
+  // todo 获取队列引用
   private final AtomicReference<BlockingQueue<E>> takeRef;
 
+  // todo 调度器
   private RpcScheduler scheduler;
 
   public CallQueueManager(Class<? extends BlockingQueue<E>> backingClass,
@@ -83,8 +92,10 @@ public class CallQueueManager<E extends Schedulable>
       boolean clientBackOffEnabled, int maxQueueSize, String namespace,
       Configuration conf) {
     int priorityLevels = parseNumLevels(namespace, conf);
+    // todo 创建调度scheduler，默认DefaultRpcScheduler
     this.scheduler = createScheduler(schedulerClass, priorityLevels,
         namespace, conf);
+    // todo 创建queue实例
     BlockingQueue<E> bq = createCallQueueInstance(backingClass,
         priorityLevels, maxQueueSize, namespace, conf);
     this.clientBackOffEnabled = clientBackOffEnabled;
@@ -92,7 +103,9 @@ public class CallQueueManager<E extends Schedulable>
         namespace + "." +
         CommonConfigurationKeys.IPC_CALLQUEUE_SERVER_FAILOVER_ENABLE,
         CommonConfigurationKeys.IPC_CALLQUEUE_SERVER_FAILOVER_ENABLE_DEFAULT);
+    // todo 放入队列引用
     this.putRef = new AtomicReference<BlockingQueue<E>>(bq);
+    // todo 获取队列引用
     this.takeRef = new AtomicReference<BlockingQueue<E>>(bq);
     LOG.info("Using callQueue: {}, queueCapacity: {}, " +
         "scheduler: {}, ipcBackoff: {}.",

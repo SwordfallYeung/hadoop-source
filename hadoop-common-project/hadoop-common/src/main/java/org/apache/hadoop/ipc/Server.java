@@ -1120,6 +1120,8 @@ public abstract class Server {
       ResponseParams responseParams = new ResponseParams();
 
       try {
+        // todo 通过call()发起本地调用，并返回结果
+        //      最终会匹配到ProtobufEngine2里面的call方法
         value = call(
             rpcKind, connection.protocolName, rpcRequest, timestampNanos);
       } catch (Throwable e) {
@@ -1575,6 +1577,7 @@ public abstract class Server {
         // todo 获取reader，通过%取余的方式获取reader
         Reader reader = getReader();
         // todo 构造connection对象，添加到readKey的附件传递给Reader对象
+        // todo 注册IO读事件
         Connection c = connectionManager.register(channel,
             this.listenPort, this.isOnAuxiliaryPort);
         // If the connectionManager can't take it, close the connection.
@@ -1670,6 +1673,13 @@ public abstract class Server {
       15, TimeUnit.MINUTES);
 
   // Sends responses of RPC back to clients.
+
+  /**
+   * todo 用于向客户端发送RPC响应，Responder也是一个线程类，Server端仅有一个Responder对象，Responder内部包含一个Selector对象responseSelector，
+   *      用于监听SelectionKey.OP_WRITE事件。当网络环境不佳或者响应信息太大时，Handler线程可能无法发送完整的响应信息到客户端，这时Handler会在
+   *      Responder.responseSelector上注册SelectionKey.OP_WRITE事件，responseSelector会循环监听网络环境是否具备发送数据的条件，之后responseselector
+   *      会触发Responder线程发送未完成的响应结果到客户端。
+   */
   private class Responder extends Thread {
     private final Selector writeSelector;
     private int pending;         // connections waiting to register
@@ -1696,13 +1706,15 @@ public abstract class Server {
         }
       }
     }
-    
+
+    // todo Responder是一个线程类，所以核心的还是run方法中的doRunLoop方法。
     private void doRunLoop() {
       long lastPurgeTimeNanos = 0;   // last check for old calls.
 
       while (running) {
         try {
           waitPending();     // If a channel is being registered, wait.
+          // todo 阻塞 15min ，如果超时的话，会执行后面的清除长期没有发送成功的消息
           writeSelector.select(
               TimeUnit.NANOSECONDS.toMillis(PURGE_INTERVAL_NANOS));
           Iterator<SelectionKey> iter = writeSelector.selectedKeys().iterator();
@@ -1711,6 +1723,7 @@ public abstract class Server {
             iter.remove();
             try {
               if (key.isWritable()) {
+                // todo 执行写入操作
                 doAsyncWrite(key);
               }
             } catch (CancelledKeyException cke) {
@@ -1753,6 +1766,7 @@ public abstract class Server {
             }
           }
 
+          // todo 移除掉已经很久没有发送的信息
           for (RpcCall call : calls) {
             doPurge(call, nowNanos);
           }
@@ -1815,7 +1829,7 @@ public abstract class Server {
 
     // Processes one response. Returns true if there are no more pending
     // data for this channel.
-    //
+    // todo 异步处理请求的方法
     private boolean processResponse(LinkedList<RpcCall> responseQueue,
                                     boolean inHandler) throws IOException {
       boolean error = true;
@@ -1985,6 +1999,8 @@ public abstract class Server {
   }
 
   /** Reads calls from a connection and queues them for handling. */
+  // todo Connection类封装了Server与Client之间的Socket连接，doAccept()方法会通过SelectionKey将新构造的Connection对象传给
+  //  Reader，这样Reader线程在被唤醒时就可以通过Connection对象读取RPC请求了。
   public class Connection {
     private boolean connectionHeaderRead = false; // connection  header is read?
     private boolean connectionContextRead = false; //if connection context that
@@ -2427,6 +2443,14 @@ public abstract class Server {
      * @throws IOException - internal error that should not be returned to
      *         client, typically failure to respond to client
      * @throws InterruptedException
+     *
+     * todo Reader线程会调用readAndProcess()方法从IO流中读取一个RPC请求。
+     *
+     * todo readAndProcess()方法会首先从Socket流中读取连接头域(connectionHeader)，
+     *      然后读取一个完整的RPC请求，最后调用processOneRpc()方法处理这个RPC请求。
+     *      然后调用processRpcRequest()处理RPC请求体。
+     *
+     * todo 这里特别注意，如果在处理过程中抛出了异常，则直接通过Socket返回RPC响应（带有Server异常信息的响应）
      */
     public int readAndProcess() throws IOException, InterruptedException {
       while (!shouldClose()) { // stop if a fatal response has been sent.
@@ -2504,6 +2528,7 @@ public abstract class Server {
           ByteBuffer requestData = data;
           data = null; // null out in case processOneRpc throws.
           boolean isHeaderRead = connectionContextRead;
+          // todo 处理这个RPC请求
           processOneRpc(requestData);
           // the last rpc-request we processed could have simply been the
           // connectionContext; if so continue to read the first RPC.
@@ -2735,6 +2760,8 @@ public abstract class Server {
      * @throws IOException - internal error that should not be returned to
      *         client, typically failure to respond to client
      * @throws InterruptedException
+     *
+     * todo processOneRpc()方法会读取出RPC请求头域，然后调用processRpcRequest()处理RPC请求体
      */
     private void processOneRpc(ByteBuffer bb)
         throws IOException, InterruptedException {
@@ -2745,15 +2772,20 @@ public abstract class Server {
       int retry = RpcConstants.INVALID_RETRY_COUNT;
       try {
         final RpcWritable.Buffer buffer = RpcWritable.Buffer.wrap(bb);
+        // todo 解析出RPC请求头域
         final RpcRequestHeaderProto header =
             getMessage(RpcRequestHeaderProto.getDefaultInstance(), buffer);
+        // todo 从RPC请求头域中提取出callId
         callId = header.getCallId();
+        // todo 从RPC请求头域中提取出重试次数
         retry = header.getRetryCount();
         if (LOG.isDebugEnabled()) {
           LOG.debug(" got #" + callId);
         }
+        // todo 检测头信息是否正确
         checkRpcHeaders(header);
 
+        // todo 处理RPC请求头域异常的情况
         if (callId < 0) { // callIds typically used during connection setup
           processRpcOutOfBandRequest(header, buffer);
         } else if (!connectionContextRead) {
@@ -2761,6 +2793,7 @@ public abstract class Server {
               RpcErrorCodeProto.FATAL_INVALID_RPC_HEADER,
               "Connection context not established");
         } else {
+          // todo 如果RPC请求头域正常，则直接调用processRpcRequest处理RPC请求体
           processRpcRequest(header, buffer);
         }
       } catch (RpcServerException rse) {
@@ -2771,6 +2804,7 @@ public abstract class Server {
               ": processOneRpc from client " + this +
               " threw exception [" + rse + "]");
         }
+        // todo 通过Socket返回这个带有异常信息的RPC响应
         // use the wrapped exception if there is one.
         Throwable t = (rse.getCause() != null) ? rse.getCause() : rse;
         final RpcCall call = new RpcCall(this, callId, retry);
@@ -2824,6 +2858,9 @@ public abstract class Server {
      * @throws IOException - fatal internal error that should/could not
      *   be sent to client.
      * @throws InterruptedException
+     *
+     * todo processRpcRequest()会从输入流中解析出完整的请求对象(包括请求元数据以及请求参数)，然后根据RPC请求头的信息(包括callId)
+     *      构造Call对象(Call对象保存了这次调用的所有信息)，最后将这个Call对象放入callQueue队列中保存，等待Handler线程处理。
      */
     private void processRpcRequest(RpcRequestHeaderProto header,
         RpcWritable.Buffer buffer) throws RpcServerException,
@@ -2838,6 +2875,7 @@ public abstract class Server {
         throw new FatalRpcServerException(
             RpcErrorCodeProto.FATAL_INVALID_RPC_HEADER, err);
       }
+      // todo 读取RPC请求体
       Writable rpcRequest;
       try { //Read the rpc request
         rpcRequest = buffer.newInstance(rpcRequestClass, conf);
@@ -2876,6 +2914,7 @@ public abstract class Server {
                 .build();
       }
 
+      // todo 构造Call对象封装RPC请求信息
       RpcCall call = new RpcCall(this, header.getCallId(),
           header.getRetryCount(), rpcRequest,
           ProtoUtil.convert(header.getRpcKind()),
@@ -2910,6 +2949,7 @@ public abstract class Server {
       }
 
       try {
+        // todo 将Call对象放入callQueue中，等待Handler处理
         internalQueueCall(call);
       } catch (RpcServerException rse) {
         throw rse;
@@ -3087,13 +3127,22 @@ public abstract class Server {
   }
 
   /** Handles queued calls . */
+  /**
+   * todo 用于处理RPC请求并发回响应。Handler对象会从CallQueue中不停地提取RPC请求，然后执行RPC请求对应的本地函数，最后封装响应并将响应
+   *      返回客户端。为了能够并发地处理RPC请求，Server中会存在多个Handler对象。
+   */
   private class Handler extends Thread {
+    // todo 构造方法
     public Handler(int instanceNumber) {
       this.setDaemon(true);
       this.setName("IPC Server handler "+ instanceNumber +
           " on default port " + port);
     }
 
+    /**
+     * todo Handler线程类的主方法会循环从共享队列callQueue中取出待处理的Call对象，然后调用Server.call()方法执行RPC调用对应的本地函数，
+     *      如果在调用过程中发生异常，则将异常信息保存下来。接下来Handler会调用setupResponse()方法构造RPC响应，并调用responder.doRespond()方法将响应发回。
+     */
     @Override
     public void run() {
       LOG.debug(Thread.currentThread().getName() + ": starting");
@@ -3108,6 +3157,7 @@ public abstract class Server {
         boolean connDropped = true;
 
         try {
+          // todo 从callQueue中取出请求
           call = callQueue.take(); // pop the queue; maybe blocked here
           startTimeNanos = Time.monotonicNowNanos();
           if (alignmentContext != null && call.isCallCoordinated() &&
@@ -3131,6 +3181,7 @@ public abstract class Server {
           if (LOG.isDebugEnabled()) {
             LOG.debug(Thread.currentThread().getName() + ": " + call + " for RpcKind " + call.rpcKind);
           }
+          // todo 设置当前线程要处理的call任务
           CurCall.set(call);
           if (call.traceScope != null) {
             call.traceScope.reattach();
@@ -3141,6 +3192,7 @@ public abstract class Server {
           CallerContext.setCurrent(call.callerContext);
           UserGroupInformation remoteUser = call.getRemoteUser();
           connDropped = !call.isOpen();
+          // todo 通过调用Call对象的run()方法发起本地调用，并返回结果
           if (remoteUser != null) {
             remoteUser.doAs(call);
           } else {
@@ -3299,6 +3351,7 @@ public abstract class Server {
     final String prefix = getQueueClassPrefix();
     // todo CallQueue reader读取client端的数据之后，放到这个队列里面，等到handler进行处理
     //    队列：LinkedBlockingQueue<Call> 格式，调度器默认：DefaultRpcScheduler
+    //    callQueue不仅仅是一个队列，是通过CallQueueManager对象进行管理，支持阻塞队列，调度
     this.callQueue = new CallQueueManager<Call>(getQueueClass(prefix, conf),
         getSchedulerClass(prefix, conf),
         getClientBackoffEnable(prefix, conf), maxQueueSize, prefix, conf);
@@ -3318,6 +3371,7 @@ public abstract class Server {
     listener = new Listener(port);
     // set the server port to the default listener port.
     this.port = listener.getAddress().getPort();
+    // todo ConnectionManager就是对Connection的一个管理类，可以对Connection进行创建，监控等操作
     connectionManager = new ConnectionManager();
     this.rpcMetrics = RpcMetrics.create(this, conf);
     this.rpcDetailedMetrics = RpcDetailedMetrics.create(this.port);
@@ -3876,21 +3930,30 @@ public abstract class Server {
   }
   
   private class ConnectionManager {
+    // todo 现有Connection的数量
     final private AtomicInteger count = new AtomicInteger();
     final private AtomicLong droppedConnections = new AtomicLong();
+    // todo 现有的Connection连接
     final private Set<Connection> connections;
     /* Map to maintain the statistics per User */
     final private Map<String, Integer> userToConnectionsMap;
     final private Object userToConnectionsMapLock = new Object();
 
+    // todo Timer定时器，定期检查/关闭 Connection
     final private Timer idleScanTimer;
+    // todo 定义 空闲多久之后关闭 Connection 默认值：4秒
     final private int idleScanThreshold;
+    // todo 扫描间隔 默认 10秒
     final private int idleScanInterval;
+    // todo 最大等待时间 默认值 20秒
     final private int maxIdleTime;
+    // todo 定义一次断开连接的最大客户端数，默认值 10
     final private int maxIdleToClose;
+    // todo 定义最大连接数 默认值 0 ，无限制
     final private int maxConnections;
     
     ConnectionManager() {
+      // todo 初始化idleScanTimer定时任务
       this.idleScanTimer = new Timer(
           "IPC Server idle connection scanner for port " + getPort(), true);
       this.idleScanThreshold = conf.getInt(
@@ -3910,6 +3973,7 @@ public abstract class Server {
           CommonConfigurationKeysPublic.IPC_SERVER_MAX_CONNECTIONS_DEFAULT);
       // create a set with concurrency -and- a thread-safe iterator, add 2
       // for listener and idle closer threads
+      // todo 返回值是线程安全的Set<Connection>
       this.connections = Collections.newSetFromMap(
           new ConcurrentHashMap<Connection,Boolean>(
               maxQueueSize, 0.75f, readThreads+2));
@@ -4055,11 +4119,13 @@ public abstract class Server {
     void stopIdleScan() {
       idleScanTimer.cancel();
     }
-    
+
+    // todo 由Listener的run方法进行调用，定时扫描connection，关闭超时、无效的connection
     private void scheduleIdleScanTask() {
       if (!running) {
         return;
       }
+      // todo 创建线程，定时扫描connection，关闭超时、无效的连接
       TimerTask idleScanTask = new TimerTask(){
         @Override
         public void run() {
