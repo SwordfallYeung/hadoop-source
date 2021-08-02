@@ -120,9 +120,13 @@ public class ProtobufRpcEngine2 implements RpcEngine {
       AtomicBoolean fallbackToSimpleAuth, AlignmentContext alignmentContext)
       throws IOException {
 
+    // todo 构造一个实现了InvocationHandler接口的invoker 对象
+    //     (动态代理机制中的InvocationHandler对象会在invoke()方法中代理所有目标接口上的 调用，
+    //      用户可以在invoke()方法中添加代理操作)
     final Invoker invoker = new Invoker(protocol, addr, ticket, conf, factory,
         rpcTimeout, connectionRetryPolicy, fallbackToSimpleAuth,
         alignmentContext);
+    // todo 然后调用Proxy.newProxylnstance()获取动态代理对象，并通过ProtocolProxy返回
     return new ProtocolProxy<T>(protocol, (T) Proxy.newProxyInstance(
         protocol.getClassLoader(), new Class[]{protocol}, invoker), false);
   }
