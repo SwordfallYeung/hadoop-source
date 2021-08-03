@@ -1823,18 +1823,22 @@ public class NameNode extends ReconfigurableBase implements
   /**
    */
   public static void main(String argv[]) throws Exception {
+    // todo 参数校验
     if (DFSUtil.parseHelpArgument(argv, NameNode.USAGE, System.out, true)) {
       System.exit(0);
     }
 
     try {
       StringUtils.startupShutdownMessage(NameNode.class, argv, LOG);
+      // todo 核心：调用createNameNode()方法创建NameNode对象
       NameNode namenode = createNameNode(argv, null);
       if (namenode != null) {
+        // todo 等待NameNode RPC服务结束
         namenode.join();
       }
     } catch (Throwable e) {
       LOG.error("Failed to start namenode.", e);
+      // todo 出现异常则直接退出执行
       terminate(1, e);
     }
   }
