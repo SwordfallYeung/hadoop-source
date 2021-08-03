@@ -71,6 +71,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
 
   static final byte[] ROOT_NAME = DFSUtil.string2Bytes("");
 
+  // todo 使用一个children字段保存该目录中所有孩子节点的INode对象 : ArrayList实例
   private List<INode> children = null;
   
   /** constructor */

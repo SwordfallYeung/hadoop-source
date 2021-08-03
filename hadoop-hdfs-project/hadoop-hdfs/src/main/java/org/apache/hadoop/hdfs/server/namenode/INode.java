@@ -59,6 +59,8 @@ public abstract class INode implements INodeAttributes, Diff.Element<byte[]> {
   public static final Logger LOG = LoggerFactory.getLogger(INode.class);
 
   /** parent is either an {@link INodeDirectory} or an {@link INodeReference}.*/
+  // todo INode类中只有一个字段，就是parent，表明当前INode的父目录。HDFS中除了根目录外，
+  //  其他所有的文件与目录都存在一个父目录。注意，父目录的类型只能是INodeDirectory类或者INodeReference类之一。
   private INode parent = null;
 
   INode(INode parent) {

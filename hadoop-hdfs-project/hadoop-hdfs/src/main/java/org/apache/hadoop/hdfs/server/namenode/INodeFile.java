@@ -248,8 +248,16 @@ public class INodeFile extends INodeWithAdditionalFields
 
   }
 
+  /**
+   * todo 文件头信息
+   *       header字段保存了当前文件有多个副本，以及文件数据块的大小
+   *       (header字段的处理类似于INode中的permission字段，前4个比特用于保存存储策略，
+   *       中间12个比特用于保存文件备份系数，后48个比特用于保存数据块大小。 使用内部类HeaderFormat处理);
+   */
   private long header = 0L;
 
+  // todo 文件数据块信息
+  //      文件对应的数据块信息blocks字段
   private BlockInfo[] blocks;
 
   INodeFile(long id, byte[] name, PermissionStatus permissions, long mtime,
@@ -265,8 +273,10 @@ public class INodeFile extends INodeWithAdditionalFields
     super(id, name, permissions, mtime, atime);
     final long layoutRedundancy = HeaderFormat.getBlockLayoutRedundancy(
         blockType, replication, ecPolicyID);
+    // todo 构建头信息
     header = HeaderFormat.toLong(preferredBlockSize, layoutRedundancy,
         storagePolicyID);
+    // todo 设置blocks信息
     if (blklist != null && blklist.length > 0) {
       for (BlockInfo b : blklist) {
         Preconditions.checkArgument(b.getBlockType() == blockType);
