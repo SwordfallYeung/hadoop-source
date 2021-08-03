@@ -765,6 +765,8 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
   static FSNamesystem loadFromDisk(Configuration conf) throws IOException {
 
     checkConfiguration(conf);
+
+    // todo 构建 FSImage
     FSImage fsImage = new FSImage(conf,
         FSNamesystem.getNamespaceDirs(conf),
         FSNamesystem.getNamespaceEditsDirs(conf));
@@ -773,9 +775,9 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     if (startOpt == StartupOption.RECOVER) {
       namesystem.setSafeMode(SafeModeAction.SAFEMODE_ENTER);
     }
-
     long loadStart = monotonicNow();
     try {
+      // todo 加载fsimage以及editlog文件
       namesystem.loadFSImage(startOpt);
     } catch (IOException ioe) {
       LOG.warn("Encountered exception loading fsimage", ioe);

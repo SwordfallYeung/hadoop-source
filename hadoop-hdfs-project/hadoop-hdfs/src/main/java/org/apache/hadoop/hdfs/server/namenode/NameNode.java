@@ -674,6 +674,7 @@ public class NameNode extends ReconfigurableBase implements
   }
 
   protected void loadNamesystem(Configuration conf) throws IOException {
+    // todo 从磁盘中加载 FSNamesystem
     this.namesystem = FSNamesystem.loadFromDisk(conf);
   }
 
@@ -736,6 +737,7 @@ public class NameNode extends ReconfigurableBase implements
     NameNode.initMetrics(conf, this.getRole());
     StartupProgressMetrics.register(startupProgress);
 
+    // todo 构造JvmPauseMonitor对象，并启动
     pauseMonitor = new JvmPauseMonitor();
     pauseMonitor.init(conf);
     pauseMonitor.start();
@@ -757,13 +759,18 @@ public class NameNode extends ReconfigurableBase implements
       metrics.getJvmMetrics().setGcTimeMonitor(gcTimeMonitor);
     }
 
+    // todo 1. 启动HTTP服务
     if (NamenodeRole.NAMENODE == role) {
       startHttpServer(conf);
     }
 
+    // todo 2. 初始化FSNamesystem，NameNode将对文件系统的管理都委托给了FSNamesystem对象，
+    //      NameNode会调用FSNamesystem.loadFromDisk()创建FSNamesystem对象。FSNamesystem.loadFromDisk()首先调用构造方法构造FSNamesystem对象，
+    //      然后将fsimage以及editlog文件加载到命名空间中。
     loadNamesystem(conf);
     startAliasMapServerIfNecessary(conf);
 
+    // todo 3. 创建RPC服务
     rpcServer = createRpcServer(conf);
 
     initReconfigurableBackoffKey();
@@ -783,8 +790,9 @@ public class NameNode extends ReconfigurableBase implements
         httpServer.setAliasMap(levelDBAliasMapServer.getAliasMap());
       }
     }
-
+    //todo 启动httpServer以及rpcServer
     startCommonServices(conf);
+    //todo 启动计时器定期将NameNode度量写入日志文件。此行为可由配置禁用。
     startMetricsLogger(conf);
   }
 
@@ -1001,7 +1009,9 @@ public class NameNode extends ReconfigurableBase implements
         new TracerConfigurationManager(NAMENODE_HTRACE_PREFIX, conf);
     this.role = role;
     String nsId = getNameServiceId(conf);
+    // todo 根据配置确认是否开启了HA  conf:core-default.xml, core-site.xml, hdfs-default.xml, hdfs-site.xml
     String namenodeId = HAUtil.getNameNodeId(conf, nsId);
+    // todo fs.defaultFS localhost:8020
     clientNamenodeAddress = NameNodeUtils.getClientNamenodeAddress(
         conf, nsId);
 
@@ -1009,13 +1019,17 @@ public class NameNode extends ReconfigurableBase implements
       LOG.info("Clients should use {} to access"
           + " this namenode/service.", clientNamenodeAddress);
     }
+    // todo 是否启用ha
     this.haEnabled = HAUtil.isHAEnabled(conf, nsId);
+    // todo 非HA ==> ACTIVE_STATE
     state = createHAState(getStartupOption(conf));
     this.allowStaleStandbyReads = HAUtil.shouldAllowStandbyReads(conf);
     this.haContext = createHAContext();
     try {
       initializeGenericKeys(conf, nsId, namenodeId);
+      // todo 执行初始化操作!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       initialize(getConf());
+      // todo 初始化完成后，NameNode进入Standby状态，在这里会开启StandbyCheckpointer里面的checkpointer线程. 定时合并&处理images文件
       state.prepareToEnterState(haContext);
       try {
         haContext.writeLock();
@@ -1024,9 +1038,11 @@ public class NameNode extends ReconfigurableBase implements
         haContext.writeUnlock();
       }
     } catch (IOException e) {
+      //todo 出现异常， 直接停止NameNode服务
       this.stopAtException(e);
       throw e;
     } catch (HadoopIllegalArgumentException e) {
+      //todo 直接停止NameNode服务
       this.stopAtException(e);
       throw e;
     }
@@ -1705,12 +1721,14 @@ public class NameNode extends ReconfigurableBase implements
   public static NameNode createNameNode(String argv[], Configuration conf)
       throws IOException {
     LOG.info("createNameNode " + Arrays.asList(argv));
+    // todo 构建配置文件
     if (conf == null)
       conf = new HdfsConfiguration();
     // Parse out some generic args into Configuration.
     GenericOptionsParser hParser = new GenericOptionsParser(conf, argv);
     argv = hParser.getRemainingArgs();
     // Parse the rest, NN specific args.
+    // todo 解析命令行的参数
     StartupOption startOpt = parseArguments(argv);
     if (startOpt == null) {
       printUsage(System.err);
@@ -1719,50 +1737,65 @@ public class NameNode extends ReconfigurableBase implements
     setStartupOption(conf, startOpt);
 
     boolean aborted = false;
+    // todo 根据启动选项调用对应的方法执行操作
     switch (startOpt) {
+     // todo 格式化当前NameNode，调用format()方法执行格式化操作
     case FORMAT:
       aborted = format(conf, startOpt.getForceFormat(),
           startOpt.getInteractiveFormat());
       terminate(aborted ? 1 : 0);
       return null; // avoid javac warning
+     // todo 生成集群id
     case GENCLUSTERID:
       String clusterID = NNStorage.newClusterID();
       LOG.info("Generated new cluster id: {}", clusterID);
       terminate(0);
       return null;
+      // todo 回滚上一次升级，调用doRollback()方法执行回滚操作。
     case ROLLBACK:
       aborted = doRollback(conf, true);
       terminate(aborted ? 1 : 0);
       return null; // avoid warning
+      // todo 拷贝Active Namenode的最新命名空间数据到StandbyNamenode，
+      //      调用BootstrapStandby.run()方法执行操作
     case BOOTSTRAPSTANDBY:
       String[] toolArgs = Arrays.copyOfRange(argv, 1, argv.length);
       int rc = BootstrapStandby.run(toolArgs, conf);
       terminate(rc);
       return null; // avoid warning
+      // todo 初始化editlog的共享存储空间， 并从Active Namenode中拷贝足够的editlog数据， 使得Standby节点能够顺利启动。
+      //      这里调用了静态方法initializeSharedEdits()执行操作
     case INITIALIZESHAREDEDITS:
       aborted = initializeSharedEdits(conf,
           startOpt.getForceFormat(),
           startOpt.getInteractiveFormat());
       terminate(aborted ? 1 : 0);
       return null; // avoid warning
+      // todo 启动backup节点，这里直接构造一个BackupNode对象并返回。
     case BACKUP:
+      // todo 启动checkpoint节点，也是直接构造BackupNode对象并返回。
     case CHECKPOINT:
       NamenodeRole role = startOpt.toNodeRole();
       DefaultMetricsSystem.initialize(role.toString().replace(" ", ""));
       return new BackupNode(conf, role);
+      // todo 恢复损坏的元数据以及文件系统， 这里调用了doRecovery()方法执行操作
     case RECOVER:
       NameNode.doRecovery(startOpt, conf);
       return null;
+      // todo 确认配置文件夹存在， 并且打印fsimage文件和文件系统的元数据版本
     case METADATAVERSION:
       printMetadataVersion(conf);
       terminate(0);
       return null; // avoid javac warning
+     // todo 升级Namenode， 升级完成后关闭Namenode。
     case UPGRADEONLY:
       DefaultMetricsSystem.initialize("NameNode");
       new NameNode(conf);
       terminate(0);
       return null;
+      // todo 在默认情况下直接构造NameNode对象并返回
     default:
+      // todo  初始化 度量服务
       DefaultMetricsSystem.initialize("NameNode");
       return new NameNode(conf);
     }
