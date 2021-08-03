@@ -1233,12 +1233,42 @@ public class NameNode extends ReconfigurableBase implements
    * @param force if true, format regardless of whether dirs exist
    * @return true if formatting was aborted, false otherwise
    * @throws IOException
+   *
+   * todo 格式化生成的文件&内容
+   *      1. VERSION                             记录版本信息
+   *      2. fsimage_0000000000000000000.md5     记录fsimage_0000000000000000000对应的md5
+   *      3. fsimage_0000000000000000000         namenode对应的fsimage文件
+   *      4. seen_txid                           事务标识
+   *
+   * todo
+   *   1.VERSION内容：
+   *    #Sun Sep 06 22:11:02 CST 2020
+   *    namespaceID=1147175932
+   *    clusterID=CID-d5e21420-46b8-41fb-acc7-8562be611472
+   *    cTime=1599401184918
+   *    storageType=NAME_NODE
+   *    blockpoolID=BP-1598486647-192.168.8.156-1599401184918
+   *    layoutVersion=-65
+   *   2.seen_txid内容，只是存储了一个数字0
+   *   3.fsimage_0000000000000000000.md5内容：
+   *     48dd36a9bd6e7ad0ca017afbef91c7cb *fsimage_0000000000000000000
+   *   4.fsimage_0000000000000000000 里面的内容比较繁琐，主要包含以下信息：
+   *     保存命名空间信息
+   *     保存ErasureCoding信息
+   *     保存命名空间中的inode信息
+   *     保存快照信息
+   *     保存安全信息
+   *     保存缓存信息
+   *     保存StringTable
    */
   private static boolean format(Configuration conf, boolean force,
       boolean isInteractive) throws IOException {
+    // todo nsId =  null
     String nsId = DFSUtil.getNamenodeNameServiceId(conf);
+    // todo namenodeId =  null
     String namenodeId = HAUtil.getNameNodeId(conf, nsId);
     initializeGenericKeys(conf, nsId, namenodeId);
+    //todo 读取配置dfs.namenode.support.allow.format  namenode是否可以格式化: 默认true
     checkAllowFormat(conf);
 
     if (UserGroupInformation.isSecurityEnabled()) {
@@ -1248,10 +1278,12 @@ public class NameNode extends ReconfigurableBase implements
     }
     
     Collection<URI> nameDirsToFormat = FSNamesystem.getNamespaceDirs(conf);
+    // todo list<URI> 0 : file:/tools/hadoop-3.2.1/data/namenode
     List<URI> sharedDirs = FSNamesystem.getSharedEditsDirs(conf);
     List<URI> dirsToPrompt = new ArrayList<URI>();
     dirsToPrompt.addAll(nameDirsToFormat);
     dirsToPrompt.addAll(sharedDirs);
+    // todo list<URI> 0 : file:/tools/hadoop-3.2.1/data/namenode
     List<URI> editDirsToFormat = 
                  FSNamesystem.getNamespaceEditsDirs(conf);
 
@@ -1259,13 +1291,15 @@ public class NameNode extends ReconfigurableBase implements
     String clusterId = StartupOption.FORMAT.getClusterId();
     if(clusterId == null || clusterId.equals("")) {
       //Generate a new cluster id
+      // todo 生成新的id  举例: CID-UUID  ==>  CID-d5e21420-46b8-41fb-acc7-8562be611472
       clusterId = NNStorage.newClusterID();
     }
 
     LOG.info("Formatting using clusterid: {}", clusterId);
-    
+    // todo 构建 FSImage
     FSImage fsImage = new FSImage(conf, nameDirsToFormat, editDirsToFormat);
     FSNamesystem fsn = null;
+    // todo 构建 FSNamesystem
     try {
       fsn = new FSNamesystem(conf, fsImage);
       fsImage.getEditLog().initJournalsForWrite();
