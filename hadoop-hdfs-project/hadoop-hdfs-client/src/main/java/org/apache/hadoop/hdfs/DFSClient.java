@@ -324,6 +324,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
     this.dfsClientConf = new DfsClientConf(conf);
     this.conf = conf;
     this.stats = stats;
+    // todo 构建socket通讯工厂类:  StandardSocketFactory
     this.socketFactory = NetUtils.getSocketFactory(conf, ClientProtocol.class);
     this.dtpReplaceDatanodeOnFailure = ReplaceDatanodeOnFailure.get(conf);
     this.smallBufferSize = DFSUtilClient.getSmallBufferSize(conf);
@@ -341,12 +342,14 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
     this.ugi = UserGroupInformation.getCurrentUser();
 
     this.namenodeUri = nameNodeUri;
+    // todo 客户端的名字
     this.clientName = "DFSClient_" + dfsClientConf.getTaskId() + "_" +
         ThreadLocalRandom.current().nextInt()  + "_" +
         Thread.currentThread().getId();
     int numResponseToDrop = conf.getInt(
         DFS_CLIENT_TEST_DROP_NAMENODE_RESPONSE_NUM_KEY,
         DFS_CLIENT_TEST_DROP_NAMENODE_RESPONSE_NUM_DEFAULT);
+    //todo 通讯协议  ClientProtocol : NameNodeProxiesClient
     ProxyAndInfo<ClientProtocol> proxyInfo = null;
     AtomicBoolean nnFallbackToSimpleAuth = new AtomicBoolean(false);
 

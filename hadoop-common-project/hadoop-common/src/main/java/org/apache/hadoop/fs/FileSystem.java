@@ -167,6 +167,13 @@ import static org.apache.hadoop.fs.impl.PathCapabilitiesSupport.validatePathCapa
  * Hive: HiveShim23
  * {@code shims/0.23/src/main/java/org/apache/hadoop/hive/shims/Hadoop23Shims.java}
  *
+ * todo FileSystem这个类是最常用的类,因为只要是我们想连接HDFS进行一些操作,程序的入口必定是它.
+ *      接下来,我们通过FileSystem来分析一下,本地代码是如何通过FileSystem连接上hadoop并且读取数据的.
+ *
+ * todo FileSystem类是通过配置参数匹配到fs.defaultFS 对应的FileSystem实现类. 然后由实现类来进行操作.
+ *      举例 : "hdfs://master"匹配的DistributedFileSystem实现类。然后DistributedFileSystem的实现类里面封装了DFSClient类，
+ *      然后后面的操作都是通过DFSClient与hadoop进行通讯。
+ *
  *****************************************************************/
 @SuppressWarnings("DeprecatedIsStillUsed")
 @InterfaceAudience.Public
@@ -3417,6 +3424,9 @@ public abstract class FileSystem extends Configured
    * @throws UnsupportedFileSystemException if there was no known implementation
    *         for the scheme.
    * @throws IOException if the filesystem could not be loaded
+   *
+   * todo 下述代码是获取FileSystem的实现类, 首先去配置文件中查找,是否配置了"fs.hdfs.impl"的实现类。
+   *       如果配置了直接返回,如果没有的话, 会查询系统自己自带的实现。也就是SERVICE_FILE_SYSTEMS 这里系统默认的配置。
    */
   public static Class<? extends FileSystem> getFileSystemClass(String scheme,
       Configuration conf) throws IOException {
@@ -3426,6 +3436,7 @@ public abstract class FileSystem extends Configured
     LOGGER.debug("Looking for FS supporting {}", scheme);
     Class<? extends FileSystem> clazz = null;
     if (conf != null) {
+      // todo 这里的 property 为: "fs.hdfs.impl"
       String property = "fs." + scheme + ".impl";
       LOGGER.debug("looking for configuration option {}", property);
       clazz = (Class<? extends FileSystem>) conf.getClass(
@@ -3435,6 +3446,7 @@ public abstract class FileSystem extends Configured
     }
     if (clazz == null) {
       LOGGER.debug("Looking in service filesystems for implementation class");
+      // todo SERVICE_FILE_SYSTEMS 有8种实现类类型
       clazz = SERVICE_FILE_SYSTEMS.get(scheme);
     } else {
       LOGGER.debug("Filesystem {} defined in configuration option", scheme);
@@ -3454,6 +3466,9 @@ public abstract class FileSystem extends Configured
    * and to pass to the {@link FileSystem#initialize(URI, Configuration)}.
    * @return the initialized filesystem.
    * @throws IOException problems loading or initializing the FileSystem
+   *
+   * todo 这里其实就是通过配置获取到 FileSystem的实现类, 通过反射进行实例化, 然后执行initialize方法进行初始化，
+   *      然后返回FileSystem对象就行了. [其实到这里 FileSystem  fs = FileSystem.get(conf); 这样代码的执行就可以结束了 ]
    */
   private static FileSystem createFileSystem(URI uri, Configuration conf)
       throws IOException {
@@ -3462,10 +3477,14 @@ public abstract class FileSystem extends Configured
         DurationInfo ignored =
             new DurationInfo(LOGGER, false, "Creating FS %s", uri)) {
       scope.addKVAnnotation("scheme", uri.getScheme());
+      // todo 根据配置获取需要加载的FileSystem实现类
+      //      hdfs 对应的实现类为: org.apache.hadoop.hdfs.DistributedFileSystem
       Class<? extends FileSystem> clazz =
           getFileSystemClass(uri.getScheme(), conf);
+      // todo 实例化配置 FileSystem
       FileSystem fs = ReflectionUtils.newInstance(clazz, conf);
       try {
+        // todo 对FileSystem 进行初始化
         fs.initialize(uri, conf);
       } catch (IOException | RuntimeException e) {
         // exception raised during initialization.

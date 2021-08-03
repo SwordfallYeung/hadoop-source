@@ -182,7 +182,7 @@ public class DistributedFileSystem extends FileSystem
     if (host == null) {
       throw new IOException("Incomplete HDFS URI, no host: "+ uri);
     }
-
+    // todo 采用DFSClient进行通讯，DFSClient主要是负责与hadoop通讯的客户端类, DFSClient是采用socket进行通讯的
     initDFSClient(uri, conf);
     this.uri = URI.create(uri.getScheme()+"://"+uri.getAuthority());
     this.workingDir = getHomeDirectory();
