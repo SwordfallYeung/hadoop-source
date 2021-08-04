@@ -164,12 +164,20 @@ public class FSImage implements Closeable {
       throws IOException {
     this.conf = conf;
 
+    // todo 构建NNStorage ==> NNStorage负责管理NameNode使用的 StorageDirectories。
     storage = new NNStorage(conf, imageDirs, editsDirs);
+
+    /**
+     * todo dfs.namenode.name.dir.restore  默认: false
+     *      设置为true可使NameNode尝试恢复以前失败的dfs.NameNode.name.dir。
+     *      启用后，将在检查点期间尝试恢复任何失败的目录。
+     */
     if(conf.getBoolean(DFSConfigKeys.DFS_NAMENODE_NAME_DIR_RESTORE_KEY,
                        DFSConfigKeys.DFS_NAMENODE_NAME_DIR_RESTORE_DEFAULT)) {
       storage.setRestoreFailedStorage(true);
     }
 
+    // todo 构建 FSEditLog
     this.editLog = FSEditLog.newInstance(conf, storage, editsDirs);
     archivalManager = new NNStorageRetentionManager(conf, storage, editLog);
     FSImageFormatProtobuf.initParallelLoad(conf);
