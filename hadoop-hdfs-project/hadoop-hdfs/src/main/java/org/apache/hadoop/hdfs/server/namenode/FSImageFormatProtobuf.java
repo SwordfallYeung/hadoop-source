@@ -731,6 +731,7 @@ public final class FSImageFormatProtobuf {
       try {
         LOG.info("Saving image file {} using {}", file, compression);
         long startTime = monotonicNow();
+        // todo 保存到fsimage文件
         long numErrors = saveInternal(
             fout, compression, file.getAbsolutePath());
         LOG.info("Image file {} of size {} bytes saved in {} seconds {}.", file,

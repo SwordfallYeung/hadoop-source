@@ -896,6 +896,11 @@ public class FSImage implements Closeable {
     return loadEdits(editStreams, target, Long.MAX_VALUE, null, null);
   }
 
+  /**
+   * todo  FSImage.loadEdits()方法会构造一个FSEditLogLoader对象，
+   *       然后遍历Namenode所有存储路径上保存的editlog文件的输入流
+   *       并调用FSEditLogLoader.loadFSEdits()方法加载指定路径上的editlog文件。
+   */
   public long loadEdits(Iterable<EditLogInputStream> editStreams,
       FSNamesystem target, long maxTxnsToRead,
       StartupOption startOpt, MetaRecoveryContext recovery)
@@ -968,8 +973,9 @@ public class FSImage implements Closeable {
     // BlockPoolId is required when the FsImageLoader loads the rolling upgrade
     // information. Make sure the ID is properly set.
     target.setBlockPoolId(this.getBlockPoolID());
-
+    // todo 获取加载器 FSImageFormat.LoaderDelegator
     FSImageFormat.LoaderDelegator loader = FSImageFormat.newLoader(conf, target);
+    // todo 加载文件
     loader.load(curFile, requireSameLayoutVersion);
 
     // Check that the image digest we loaded matches up with what
@@ -989,17 +995,23 @@ public class FSImage implements Closeable {
   }
 
   /**
+   * todo 将 FS image的内容保存到文件中。
    * Save the contents of the FS image to the file.
    */
   void saveFSImage(SaveNamespaceContext context, StorageDirectory sd,
       NameNodeFile dstType) throws IOException {
+    // todo 获取当前命名空间中记录的最新事务的txid
     long txid = context.getTxId();
+    // todo fsimage文件
     File newFile = NNStorage.getStorageFile(sd, NameNodeFile.IMAGE_NEW, txid);
     File dstFile = NNStorage.getStorageFile(sd, dstType, txid);
-    
+
+    // todo FSImageFormatProtobuf.Saver类负责保存fsimage
     FSImageFormatProtobuf.Saver saver = new FSImageFormatProtobuf.Saver(context,
         conf);
+    // todo 压缩类
     FSImageCompression compression = FSImageCompression.createCompression(conf);
+    // todo 调用Saver类保存fsimage文件
     long numErrors = saver.save(newFile, compression);
     if (numErrors > 0) {
       // The image is likely corrupted.
@@ -1008,6 +1020,7 @@ public class FSImage implements Closeable {
       exitAfterSave.set(true);
     }
 
+    // todo 保存MD5校验值
     MD5FileUtils.saveMD5File(dstFile, saver.getSavedDigest());
     storage.setMostRecentCheckpointInfo(txid, Time.now());
   }
@@ -1041,6 +1054,9 @@ public class FSImage implements Closeable {
    * This way we are guaranteed that the namespace is not being updated
    * while multiple instances of FSImageSaver are traversing it
    * and writing it out.
+   *
+   * todo 命名空间具体的保存操作是由FSImageSaver这个类来承担的，FSImageSaver是FSImage中的内部类，
+   *      也是一个线程类，它的run()方法调用了saveFSImage()方法来保存fsimage文件。
    */
   private class FSImageSaver implements Runnable {
     private final SaveNamespaceContext context;
@@ -1069,6 +1085,7 @@ public class FSImage implements Closeable {
       ShutdownHookManager.get().addShutdownHook(cancelCheckpointFinalizer,
           SHUTDOWN_HOOK_PRIORITY);
       try {
+        // todo 保存fsimage文件
         saveFSImage(context, sd, nnf);
       } catch (SaveNamespaceCancelledException snce) {
         LOG.info("Cancelled image saving for " + sd.getRoot() +
