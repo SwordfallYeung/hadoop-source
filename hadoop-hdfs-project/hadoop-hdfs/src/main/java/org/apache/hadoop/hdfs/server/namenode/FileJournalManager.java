@@ -138,8 +138,10 @@ public class FileJournalManager implements JournalManager {
   @Override
   synchronized public void finalizeLogSegment(long firstTxId, long lastTxId)
       throws IOException {
+    // todo 原有的inprogress文件
     File inprogressFile = NNStorage.getInProgressEditsFile(sd, firstTxId);
 
+    // todo 构造新的edit文件
     File dstFile = NNStorage.getFinalizedEditsFile(
         sd, firstTxId, lastTxId);
     LOG.info("Finalizing edits file " + inprogressFile + " -> " + dstFile);
@@ -149,6 +151,7 @@ public class FileJournalManager implements JournalManager {
         "already exists");
 
     try {
+      // todo 执行重命名操作
       NativeIO.renameTo(inprogressFile, dstFile);
     } catch (IOException e) {
       errorReporter.reportErrorOnFile(dstFile);

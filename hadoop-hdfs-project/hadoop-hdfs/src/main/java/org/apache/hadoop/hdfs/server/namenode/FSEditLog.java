@@ -143,12 +143,19 @@ public class FSEditLog implements LogsPurgeable {
    * started up, and then will move to IN_SEGMENT so it can begin writing to the
    * log. The log states will then revert to behaving as they do in a non-HA
    * setup.
+   *
+   * todo FSEditLog类被设计成一个状态机，用内部类FSEditLog.State描述。
    */
   private enum State {
+    // todo editlog的初始状态。
     UNINITIALIZED,
+    // todo editlog的前一个segment已经关闭， 新的还没开始。
     BETWEEN_LOG_SEGMENTS,
+    // todo editlog处于可写状态。
     IN_SEGMENT,
+    // todo editlog处于可读状态。
     OPEN_FOR_READING,
+    // todo editlog处于关闭状态。
     CLOSED;
   }  
   private State state = State.UNINITIALIZED;
@@ -205,6 +212,12 @@ public class FSEditLog implements LogsPurgeable {
    */
   private final Object journalSetLock = new Object();
 
+  /**
+   * todo TransactionId与客户端每次发起的RPC操作相关，
+   *      当客户端发起一次RPC请求对Namenode的命名空间修改后，
+   *      Namenode就会在editlog中发起一个新的transaction用于记录这次操作，
+   *      每个transaction会用一个唯一的transactionId标识。
+   */
   private static class TransactionId {
     public long txid;
 
@@ -221,6 +234,10 @@ public class FSEditLog implements LogsPurgeable {
     }
   };
 
+  /**
+   * todo FSEditLog是通过newInstance方法进行构造的, 可以根据配置dfs.namenode.edits.asynclogging生成不同的FSEditLog实例，
+   *      默认是FSEditLogAsync
+   */
   static FSEditLog newInstance(Configuration conf, NNStorage storage,
       List<URI> editsDirs) {
     boolean asyncEditLogging = conf.getBoolean(
@@ -261,7 +278,8 @@ public class FSEditLog implements LogsPurgeable {
     initJournals(this.editsDirs);
     state = State.BETWEEN_LOG_SEGMENTS;
   }
-  
+
+  // todo 用在HA情况下。调用这个方法会将FSEditLog从UNINITIALIZED状态转换为OPEN_FOR_READING状态。
   public synchronized void initSharedJournalsForRead() {
     if (state == State.OPEN_FOR_READING) {
       LOG.warn("Initializing shared journals for READ, already open for READ",
@@ -270,29 +288,35 @@ public class FSEditLog implements LogsPurgeable {
     }
     Preconditions.checkState(state == State.UNINITIALIZED ||
         state == State.CLOSED);
-    
+
+    // todo 对于HA的情况，editlog的日志存储目录为共享的目录sharedEditsDirs
     initJournals(this.sharedEditsDirs);
     state = State.OPEN_FOR_READING;
   }
   
   private synchronized void initJournals(List<URI> dirs) {
+    // todo dfs.namenode.edits.dir.minimum 默认值: 1
     int minimumRedundantJournals = conf.getInt(
         DFSConfigKeys.DFS_NAMENODE_EDITS_DIR_MINIMUM_KEY,
         DFSConfigKeys.DFS_NAMENODE_EDITS_DIR_MINIMUM_DEFAULT);
 
     synchronized(journalSetLock) {
+      // todo 初始化journalSet集合，存放存储路径对应的所有JournalManager对象
       journalSet = new JournalSet(minimumRedundantJournals);
 
+      // todo 根据传入的URI获取对应的JournalManager对象
       for (URI u : dirs) {
         boolean required = FSNamesystem.getRequiredNamespaceEditsDirs(conf)
             .contains(u);
         if (u.getScheme().equals(NNStorage.LOCAL_URI_SCHEME)) {
           StorageDirectory sd = storage.getStorageDirectory(u);
           if (sd != null) {
+            // todo 本地URI，则加入FileJournalManager即可
             journalSet.add(new FileJournalManager(conf, sd, storage),
                 required, sharedEditsDirs.contains(u));
           }
         } else {
+          // todo 否则根椐URI创建对应的JournalManager对象，并放入journalSet中保存
           journalSet.add(createJournal(u), required,
               sharedEditsDirs.contains(u));
         }
@@ -315,16 +339,24 @@ public class FSEditLog implements LogsPurgeable {
   /**
    * Initialize the output stream for logging, opening the first
    * log segment.
+   *
+   * todo openForWrite()方法用于初始化editlog文件的输出流，并且打开第一个日志段落(log segment)。
+   *      在非HA机制下，调用这个方法会完成BETWEEN_LOG_SEGMENTS状态到IN_SEGMENT状态的转换。
    */
   synchronized void openForWrite(int layoutVersion) throws IOException {
     Preconditions.checkState(state == State.BETWEEN_LOG_SEGMENTS,
         "Bad state: %s", state);
 
+    // todo 返回最后一个写入log的transactionId+1，作为本次操作的transactionId, 假设当前的transactionId为31
     long segmentTxId = getLastWrittenTxId() + 1;
     // Safety check: we should never start a segment if there are
     // newer txids readable.
     List<EditLogInputStream> streams = new ArrayList<EditLogInputStream>();
+    // todo 传入了参数segmentTxId，这个参数会作为这次操作的transactionId，值为editlog已经记录的最新的transactionId加1(这里是31+1=32)。
+    //       selectInputStreams()方法会判断有没有一个以segmentTxId(32)开始的日志，如果没有则表示当前transactionId的值选择正确，可以打开新的editlog文件记录以segmentTxId开始的日志段落。
+    //       如果方法找到了包含这个transactionId的editlog文件，则表示出现了两个日志 transactionId交叉的情况，抛出异常。
     journalSet.selectInputStreams(streams, segmentTxId, true, false);
+    // todo 这里判断，有没有包含这个新的segmentTxId的editlog文件，如果有则抛出异常
     if (!streams.isEmpty()) {
       String error = String.format("Cannot start writing at txid %s " +
         "when there is a stream available for read: %s",
@@ -333,7 +365,8 @@ public class FSEditLog implements LogsPurgeable {
           streams.toArray(new EditLogInputStream[0]));
       throw new IllegalStateException(error);
     }
-    
+
+    // todo 写入日志
     startLogSegmentAndWriteHeaderTxn(segmentTxId, layoutVersion);
     assert state == State.IN_SEGMENT : "Bad state: " + state;
   }
@@ -385,6 +418,10 @@ public class FSEditLog implements LogsPurgeable {
 
   /**
    * Shutdown the file store.
+   *
+   * todo close()方法用于关闭editlog文件的存储，完成了IN_SEGMENT到CLOSED状态的改变。
+   *      close()会首先等待sync操作完成，然后调用endCurrentLogSegment()方法，将当前正在进行写操作的日志段落结束。
+   *      之后close()方法会关闭journalSet对象，并将FSEditLog状态机转变为CLOSED状态。
    */
   synchronized void close() {
     if (state == State.CLOSED) {
@@ -395,10 +432,13 @@ public class FSEditLog implements LogsPurgeable {
     try {
       if (state == State.IN_SEGMENT) {
         assert editLogStream != null;
+        // todo 如果有sync操作， 则等待sync操作完成
         waitForSyncToFinish();
+        // todo 结束当前logSegment
         endCurrentLogSegment(true);
       }
     } finally {
+      // todo 关闭journalSet
       if (journalSet != null && !journalSet.isEmpty()) {
         try {
           synchronized(journalSetLock) {
@@ -408,6 +448,7 @@ public class FSEditLog implements LogsPurgeable {
           LOG.warn("Error closing journalSet", ioe);
         }
       }
+      // todo 将状态机更改为CLOSED状态
       state = State.CLOSED;
     }
   }
@@ -452,13 +493,17 @@ public class FSEditLog implements LogsPurgeable {
    * Additionally, this will sync the edit log if required by the underlying
    * edit stream's automatic sync policy (e.g. when the buffer is full, or
    * if a time interval has elapsed).
+   *
+   * todo 基本上所有的log*()方法（例如logDelete()、 logCloseFile()）在底层都调用了logEdit()方法来执行记录操作，
+   *      这里会传入一个FSEditLogOp对象来标识当前需要被记录的操作类型以及操作的信息。
    */
   void logEdit(final FSEditLogOp op) {
     boolean needsSync = false;
     synchronized (this) {
       assert isOpenForWrite() :
         "bad state: " + state;
-      
+
+      // todo 如果自动同步开启， 则等待同步完成
       // wait if an automatic sync is scheduled
       waitIfAutoSyncScheduled();
 
@@ -998,12 +1043,17 @@ public class FSEditLog implements LogsPurgeable {
   
   /** 
    * Add delete file record to edit log
+   *
+   * todo logDelete()方法用于在editlog文件中记录删除HDFS文件的操作。
    */
   void logDelete(String src, long timestamp, boolean toLogRpcIds) {
+    // todo 构造DeleteOp对象
     DeleteOp op = DeleteOp.getInstance(cache.get())
       .setPath(src)
       .setTimestamp(timestamp);
+    // todo 记录RPC调用相关信息
     logRpcIds(op, toLogRpcIds);
+    // todo 记录RPC调用相关信息
     logEdit(op);
   }
   
@@ -1382,7 +1432,10 @@ public class FSEditLog implements LogsPurgeable {
   
   /**
    * Start writing to the log segment with the given txid.
-   * Transitions from BETWEEN_LOG_SEGMENTS state to IN_LOG_SEGMENT state. 
+   * Transitions from BETWEEN_LOG_SEGMENTS state to IN_LOG_SEGMENT state.
+   *
+   * todo 这个方法调用了journalSet.startLogSegment()方法在所有editlog文件的存储路径上构造输出流，
+   *      并将这些输 出流保存在FSEditLog的字段journalSet.journals中。
    */
   private void startLogSegment(final long segmentTxId, int layoutVersion)
       throws IOException {
@@ -1409,6 +1462,7 @@ public class FSEditLog implements LogsPurgeable {
     storage.attemptRestoreRemovedStorage();
     
     try {
+      // todo 初始化editLogStream
       editLogStream = journalSet.startLogSegment(segmentTxId, layoutVersion);
     } catch (IOException ex) {
       final String msg = "Unable to start log segment " + segmentTxId
@@ -1419,7 +1473,7 @@ public class FSEditLog implements LogsPurgeable {
       }
       terminate(1, msg);
     }
-
+    // todo 当前正在写入txid设置为segmentTxId
     curSegmentTxId = segmentTxId;
     state = State.IN_SEGMENT;
   }
@@ -1436,6 +1490,9 @@ public class FSEditLog implements LogsPurgeable {
   /**
    * Finalize the current log segment.
    * Transitions from IN_SEGMENT state to BETWEEN_LOG_SEGMENTS state.
+   *
+   * todo endCurrentLogSegment()会将当前正在写入的日志段落关闭，它调用了journalSet.finalizeLogSegment()方法将curSegmentTxid -> lastTxId
+   *      之间的操作持久化到磁盘上。这个方法会将FSEditLog状态机更改为BETWEEN_LOG_SEGMENTS状态.
    */
   public synchronized void endCurrentLogSegment(boolean writeEndTxn) {
     LOG.info("Ending log segment " + curSegmentTxId +
@@ -1453,17 +1510,20 @@ public class FSEditLog implements LogsPurgeable {
     printStatistics(true);
     
     final long lastTxId = getLastWrittenTxId();
+    // todo 获取当前写入的最后一个id
     final long lastSyncedTxId = getSyncTxId();
     Preconditions.checkArgument(lastTxId == lastSyncedTxId,
         "LastWrittenTxId %s is expected to be the same as lastSyncedTxId %s",
         lastTxId, lastSyncedTxId);
     try {
+      // todo 调用journalSet.finalizeLogSegment将curSegmentTxid -> lastTxId之间的操作
+      //      写入磁盘(例如editlog文件edits_0032-0034)
       journalSet.finalizeLogSegment(curSegmentTxId, lastTxId);
       editLogStream = null;
     } catch (IOException e) {
       //All journals have failed, it will be handled in logSync.
     }
-    
+    // todo 更改状态机的状态
     state = State.BETWEEN_LOG_SEGMENTS;
   }
   
