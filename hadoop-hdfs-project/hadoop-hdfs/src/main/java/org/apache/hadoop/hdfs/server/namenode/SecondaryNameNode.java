@@ -95,6 +95,9 @@ import javax.management.ObjectName;
  * The Secondary NameNode uses the NamenodeProtocol to talk to the
  * primary NameNode.
  *
+ * todo  Secondary NameNode 只有一个, 他的的作用是辅助NameNode进行原数的checkpoint操作, 即合并fsimage文件.
+ *       Secondary NameNode是一个守护进程,定时触发checkpoint操作, 使用NamenodeProtocol与NameNode进行通讯.
+ *
  **********************************************************/
 @InterfaceAudience.Private
 public class SecondaryNameNode implements Runnable,
