@@ -73,12 +73,15 @@ public class RMActiveServiceContext {
   private static final Logger LOG = LoggerFactory
       .getLogger(RMActiveServiceContext.class);
 
+  // todo 应用程序列表
   private final ConcurrentMap<ApplicationId, RMApp> applications =
       new ConcurrentHashMap<ApplicationId, RMApp>();
 
+  // todo 节点列表
   private final ConcurrentMap<NodeId, RMNode> nodes =
       new ConcurrentHashMap<NodeId, RMNode>();
 
+  // todo 非活跃节点列表
   private final ConcurrentMap<NodeId, RMNode> inactiveNodes =
       new ConcurrentHashMap<NodeId, RMNode>();
 
@@ -87,9 +90,13 @@ public class RMActiveServiceContext {
 
   private boolean isWorkPreservingRecoveryEnabled;
 
+  // todo 运行中的AM心跳监控
   private AMLivelinessMonitor amLivelinessMonitor;
+  // todo 运行完成的AM心跳监控
   private AMLivelinessMonitor amFinishingMonitor;
+  // todo ResourceManager状态保存处
   private RMStateStore stateStore = null;
+  // todo Container超时监控，应用程序必须在一定时间内使用分配到的Container，否则将被回收
   private ContainerAllocationExpirer containerAllocationExpirer;
   private DelegationTokenRenewer delegationTokenRenewer;
   private AMRMTokenSecretManager amRMTokenSecretManager;
@@ -98,8 +105,10 @@ public class RMActiveServiceContext {
   private ClientToAMTokenSecretManagerInRM clientToAMTokenSecretManager;
   private ClientRMService clientRMService;
   private RMDelegationTokenSecretManager rmDelegationTokenSecretManager;
+  // todo 资源调度器
   private ResourceScheduler scheduler;
   private ReservationSystem reservationSystem;
+  // todo 节点管理器
   private NodesListManager nodesListManager;
   private ResourceTrackerService resourceTrackerService;
   private ApplicationMasterService applicationMasterService;
